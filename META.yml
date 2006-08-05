@@ -1,0 +1,17 @@
+# http://module-build.sourceforge.net/META-spec.html
+#XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
+name:         PAR-Repository-Client
+version:      0.01_01
+version_from: lib/PAR/Repository/Client.pm
+installdirs:  site
+requires:
+    Archive::Zip:                  0
+    DBM::Deep:                     0
+    File::Spec:                    0
+    LWP::Simple:                   0
+    PAR:                           0.949_01
+    PAR::Dist:                     0.15_01
+    version:                       0.50
+
+distribution_type: module
+generated_by: ExtUtils::MakeMaker version 6.17
