@@ -5,6 +5,7 @@ use strict;
 use warnings;
 use constant MODULES_DBM_FILE  => 'modules_dists.dbm';
 use constant SYMLINKS_DBM_FILE => 'symlinks.dbm';
+use constant REPOSITORY_INFO_FILE => 'repository_info.yml';
 
 require PAR::Repository::Client::HTTP;
 require PAR::Repository::Client::Local;
@@ -19,8 +20,14 @@ require DBM::Deep;
 require Archive::Zip;
 require File::Temp;
 require File::Copy;
+require YAML::Tiny;
 
-our $VERSION = '0.01_01';
+our $VERSION = '0.02';
+
+# list compatible repository versions
+our $Compatible_Versions = {
+    $VERSION => 1,
+};
 
 =head1 NAME
 
@@ -57,10 +64,6 @@ access methods are implemented in
 L<PAR::Repository::Client::HTTP> and L<PAR::Repository::Client::Local>.
 Any common code is in this module.
 
-=head2 EXPORT
-
-None.
-
 =head2 PAR REPOSITORIES
 
 For a detailed discussion of the structure of PAR repositories, please
@@ -93,6 +96,9 @@ using C<file:///path/to/repository> or just with C</path/to/repository>.
 HTTP accessible repositories can be specified as C<http://foo> and
 C<https://foo>.
 
+Upon client creation, the repository's version is validated to be
+compatible with this version of the client.
+
 =cut
 
 sub new {
@@ -118,7 +124,9 @@ sub new {
         error => '',
         modules_dbm_temp_file => undef,
         modules_dbm_hash => undef,
+        info => undef, # used for YAML info caching
     } => "PAR::Repository::Client::$obj_class";
+    
     $self->_init(\%args);
 
     $self->validate_repository()
@@ -323,7 +331,40 @@ sub prefered_distribution {
     my $dist = shift @sorted;
     return $dist->[0];
 }
-    
+
+=head2 validate_repository_version
+
+Accesses the repository meta information and validates that it
+has a compatible version. This is done on object creation, so
+it should not normally be necessary to call this from user code.
+
+Returns a boolean indicating the outcome of the operation.
+
+=cut
+
+sub validate_repository_version {
+    my $self = shift;
+    $self->{error} = undef;
+
+    my $info = $self->_repository_info;
+    if (not defined $info) {
+        return();
+    }
+    elsif (not exists $info->{repository_version}) {
+        $self->{error} = "Repository info file ('repository_info.yml') does not contain a version.";
+        return();
+    }
+    elsif (
+        not exists
+        $PAR::Repository::Client::Compatible_Versions->{
+            $info->{repository_version}
+        }
+    ) {
+        $self->{error} = "Repository has an incompatible version (".$info->{repository_version}.")";
+        return();
+    }
+    return 1;
+}
 
 =head2 _modules_dbm
 

@@ -63,7 +63,7 @@ sub fetch_par {
     }
     
     my $path = $self->{uri};
-    $path =~ s/\/$//;
+    $path =~ s/(?:\/|\\)$//;
     $path =~ s!^file://!!i;
     
     my ($n, $v, $a, $p) = PAR::Dist::parse_dist_name($dist);
@@ -85,6 +85,8 @@ sub fetch_par {
 Makes sure the repository is valid. Returns the empty list
 if that is not so and a true value if the repository is valid.
 
+Checks that the repository version is compatible.
+
 The error message is available as C<$client->error()> on
 failure.
 
@@ -95,8 +97,46 @@ sub validate_repository {
     $self->{error} = undef;
 
     my $mod_db = $self->_modules_dbm;
-    return 1 if defined $mod_db;
-    return();
+    return() unless defined $mod_db;
+    
+    return() unless $self->validate_repository_version;
+    
+    return 1;
+}
+
+=head2 _repository_info
+
+Returns a YAML::Tiny object representing the repository meta
+information.
+
+This is a private method.
+
+=cut
+
+sub _repository_info {
+    my $self = shift;
+    $self->{error} = undef;
+    return $self->{info} if defined $self->{info};
+
+    my $path = $self->{uri};
+    $path =~ s/(?:\/|\\)$//;
+    $path =~ s!^file://!!i;
+    
+    my $file = catfile($path, PAR::Repository::Client::REPOSITORY_INFO_FILE());
+    
+    if (not defined $file or not -f $file) {
+        $self->{error} = "File '$file' does not exist in repository.";
+        return();
+    }
+
+    my $yaml = YAML::Tiny->new->read($file);
+    if (not defined $yaml) {
+        $self->{error} = "Error reading repository info from YAML file.";
+        return();
+    }
+    
+    $self->{info} = $yaml;
+    return $yaml;
 }
 
 =head2 _fetch_dbm_file
@@ -119,7 +159,7 @@ sub _fetch_dbm_file {
     return if not defined $file;
     
     my $path = $self->{uri};
-    $path =~ s/\/$//;
+    $path =~ s/(?:\/|\\)$//;
     $path =~ s!^file://!!i;
     
     my $url = File::Spec->catfile( $path, $file );
@@ -148,11 +188,14 @@ L<PAR::Repository::Client>. It is used to initialize
 the client object and C<new()> passes it a hash ref to
 its arguments.
 
+Should return a true value on success.
+
 =cut
 
 sub _init {
     # We implement additional object attributes here
     # Currently no extra attributes...
+    return 1;
 }
 
 

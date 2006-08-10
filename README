@@ -1,6 +1,15 @@
 PAR-Repository-Client
 =====================
 
+This module represents the client for PAR repositories as
+implemented by the L<PAR::Repository> module.
+
+Chances are, you should be looking at the L<PAR> module
+instead. Starting with version 0.950, it supports
+automatically loading any modules that aren't found on your
+system from a repository. If you need finer control than that,
+then this module is the right one to use.
+
 INSTALLATION
 
 To install this module type the following:
@@ -12,13 +21,10 @@ To install this module type the following:
 
 DEPENDENCIES
 
-This module requires these other modules and libraries:
-
-  blah blah blah
+This module requires other modules and libraries. A complete
+list of dependencies can be found in the Makefile.PL file.
 
 COPYRIGHT AND LICENCE
-
-Put the correct copyright and licence information here.
 
 Copyright (C) 2006 by Steffen Müller
 
