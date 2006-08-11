@@ -1,5 +1,9 @@
 Revision history for Perl extension PAR::Repository::client.
 
+0.03  Fri Aug 11 16:14 2006
+    - Workaround for YAML::Syck/Tiny bug.
+    - Added run_script which runs a script from a repository.
+
 0.02  Thu Aug 10 15:23 2006
     - Added text to README.
     - Added support for the repository_info.yml file.

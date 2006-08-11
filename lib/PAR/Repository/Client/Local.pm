@@ -122,7 +122,7 @@ sub _repository_info {
     $path =~ s/(?:\/|\\)$//;
     $path =~ s!^file://!!i;
     
-    my $file = catfile($path, PAR::Repository::Client::REPOSITORY_INFO_FILE());
+    my $file = File::Spec->catfile($path, PAR::Repository::Client::REPOSITORY_INFO_FILE());
     
     if (not defined $file or not -f $file) {
         $self->{error} = "File '$file' does not exist in repository.";
@@ -135,6 +135,9 @@ sub _repository_info {
         return();
     }
     
+    # workaround for possible YAML::Syck/YAML::Tiny bug
+    # This is not the right way to do it!
+    @$yaml = ($yaml->[1]) if @$yaml > 1;
     $self->{info} = $yaml;
     return $yaml;
 }

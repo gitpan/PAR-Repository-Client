@@ -5,6 +5,7 @@ use strict;
 use warnings;
 use constant MODULES_DBM_FILE  => 'modules_dists.dbm';
 use constant SYMLINKS_DBM_FILE => 'symlinks.dbm';
+use constant SCRIPTS_DBM_FILE  => 'scripts_dists.dbm';
 use constant REPOSITORY_INFO_FILE => 'repository_info.yml';
 
 require PAR::Repository::Client::HTTP;
@@ -22,11 +23,11 @@ require File::Temp;
 require File::Copy;
 require YAML::Tiny;
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 # list compatible repository versions
 our $Compatible_Versions = {
-    $VERSION => 1,
+    '0.03' => 1,
 };
 
 =head1 NAME
@@ -46,6 +47,9 @@ PAR::Repository::Client - Access PAR repositories
   $client->use_module('Foo::Bar') or die $client->error;
   
   $client->require_module('Bar::Baz') or die $client->error;
+  
+  $client->run_script('foo', 'arg1', 'arg2') or die $client->error;
+  # should not be reached since we ran 'foo'!
 
 =head1 DESCRIPTION
 
@@ -257,6 +261,56 @@ sub get_module {
     return $local_par_file;
 }
 
+=head2 run_script
+
+First parameter must be a script name.
+
+Searches for a specified script in the repository and downloads
+the corresponding PAR distribution. Automatically loads PAR
+and appends the downloaded PAR distribution to the list of
+PARs to load from.
+
+Then, it runs the script. It does not return unless some error occurrs.
+
+=cut
+
+
+sub run_script {
+    my $self = shift;
+    my $script = shift;
+    
+    $self->{error} = undef;
+
+    my ($scrh) = $self->_scripts_dbm;
+    if (not defined $scrh) {
+        return();
+    }
+
+    my $dists = $scrh->{$script};
+    if (not defined $dists) {
+        $self->{error} = "Could not find script '$script' in the repository.";
+        return();
+    }
+
+    my $dist = $self->prefered_distribution($script, $dists);
+    if (not defined $dist) {
+        $self->{error} = "PAR: Could not find a distribution for script '$script'";
+        return();
+    }
+
+    my $local_par_file = $self->fetch_par($dist);
+    if (not defined $local_par_file or not -f $local_par_file) {
+        return();
+    }
+
+    @ARGV = @_;
+    PAR->import( { file => $local_par_file, run => $script } );
+    
+    # doesn't happen!?
+    return 1;
+}
+
+
 
 =head2 error
 
@@ -350,17 +404,17 @@ sub validate_repository_version {
     if (not defined $info) {
         return();
     }
-    elsif (not exists $info->{repository_version}) {
+    elsif (not exists $info->[0]{repository_version}) {
         $self->{error} = "Repository info file ('repository_info.yml') does not contain a version.";
         return();
     }
     elsif (
         not exists
         $PAR::Repository::Client::Compatible_Versions->{
-            $info->{repository_version}
+            $info->[0]{repository_version}
         }
     ) {
-        $self->{error} = "Repository has an incompatible version (".$info->{repository_version}.")";
+        $self->{error} = "Repository has an incompatible version (".$info->[0]{repository_version}.")";
         return();
     }
     return 1;
@@ -418,6 +472,59 @@ sub _modules_dbm {
 	return (\%hash, $tempfile);
 }
 
+=head2 _scripts_dbm
+
+This is a private method.
+
+Fetches the C<scripts_dists.dbm> database from the repository,
+ties it to a L<DBM::Deep> object and returns a tied hash
+reference or the empty list on failure. Second return
+value is the name of the local temporary file.
+
+In case of failure, an error message is available via
+the C<error()> method.
+
+The method uses the C<_fetch_dbm_file()> method which must be
+implemented in a subclass such as L<PAR::Repository::Client::HTTP>.
+
+=cut
+
+sub _scripts_dbm {
+    my $self = shift;
+    $self->{error} = undef;
+    
+    $self->_close_scripts_dbm;
+    
+    my $file = $self->_fetch_dbm_file(SCRIPTS_DBM_FILE().".zip");
+    # (error set by _fetch_dbm_file)
+    return() if not defined $file; # or not -f $file; # <--- _fetch_dbm_file should do the stat!
+    
+    my ($tempfh, $tempfile) = File::Temp::tempfile(
+		'temporary_dbm_XXXXX',
+		UNLINK => 0,
+		DIR => File::Spec->tmpdir(),
+	);
+    
+	if (not $self->_unzip_file($file, $tempfile, SCRIPTS_DBM_FILE())) {
+        $self->{error} = "Could not unzip dbm file '$file' to '$tempfile'";
+        return();
+    }
+
+    unlink $file;
+    
+    $self->{scripts_dbm_temp_file} = $tempfile;
+
+	my %hash;
+    my $obj = tie %hash, "DBM::Deep", {
+		file => $tempfile,
+		locking => 1,
+	}; 
+
+    $self->{scripts_dbm_hash} = \%hash;
+	return (\%hash, $tempfile);
+}
+
+
 
 =head2 _close_modules_dbm
 
@@ -445,6 +552,34 @@ sub _close_modules_dbm {
 
 	return 1;
 }
+
+=head2 _close_scripts_dbm
+
+This is a private method.
+
+Closes the C<scripts_dists.dbm> file and does all necessary
+cleaning up.
+
+This is called when the object is destroyed.
+
+=cut
+
+sub _close_scripts_dbm {
+	my $self = shift;
+	my $hash = $self->{scripts_dbm_hash};
+	return if not defined $hash;
+
+	my $obj = tied($hash);
+	$self->{scripts_dbm_hash} = undef;
+	undef $hash;
+	undef $obj;
+	
+	unlink $self->{scripts_dbm_temp_file};
+	$self->{scripts_dbm_temp_file} = undef;
+
+	return 1;
+}
+
 
 
 =head2 _unzip_file
@@ -482,6 +617,7 @@ sub _unzip_file {
 sub DESTROY {
     my $self = shift;
     $self->_close_modules_dbm;
+    $self->_close_scripts_dbm;
 }
 
 1;

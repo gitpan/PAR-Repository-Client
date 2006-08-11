@@ -161,6 +161,10 @@ sub _repository_info {
         return();
     }
     
+    # workaround for possible YAML::Syck/YAML::Tiny bug
+    # This is not the right way to do it!
+    @$yaml = ($yaml->[1]) if @$yaml > 1;
+
     $self->{info} = $yaml;
     return $yaml;
 }
