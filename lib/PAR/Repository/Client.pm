@@ -23,7 +23,7 @@ require File::Temp;
 require File::Copy;
 require YAML::Tiny;
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 # list compatible repository versions
 our $Compatible_Versions = {
@@ -100,6 +100,11 @@ using C<file:///path/to/repository> or just with C</path/to/repository>.
 HTTP accessible repositories can be specified as C<http://foo> and
 C<https://foo>.
 
+If the optional I<auto_install> parameter is set to a true value
+(default: false), any F<.par> file that is about to be loaded is
+installed on the local system instead. In this context, please
+refer to the C<install_module()> method.
+
 Upon client creation, the repository's version is validated to be
 compatible with this version of the client.
 
@@ -129,6 +134,7 @@ sub new {
         modules_dbm_temp_file => undef,
         modules_dbm_hash => undef,
         info => undef, # used for YAML info caching
+        auto_install => $args{auto_install},
     } => "PAR::Repository::Client::$obj_class";
     
     $self->_init(\%args);
@@ -167,7 +173,10 @@ sub require_module {
     $self->{error} = undef;
 
     # fetch the module, load preferably (fallback => 0)
-    my $file = $self->get_module($namespace, 0);
+    my $file =
+        $self->{auto_install}
+        ? $self->install_module($namespace)
+        : $self->get_module($namespace, 0);
     
     eval "require $namespace;";
     if ($@) {
@@ -234,6 +243,27 @@ sub get_module {
     
     $self->{error} = undef;
 
+    my $local_par_file;
+    if ($self->{auto_install}) {
+        $local_par_file = $self->install_module($namespace);
+        return() if not defined $local_par_file;
+    }
+    else {
+        $local_par_file = $self->_fetch_module($namespace);
+        return() if not defined $local_par_file;
+        
+        PAR->import( { file => $local_par_file, fallback => ($fallback?1:0) } );
+    }
+        
+    return $local_par_file;
+}
+
+sub _fetch_module {
+    my $self = shift;
+    my $namespace = shift;
+    
+    $self->{error} = undef;
+
     my ($modh) = $self->_modules_dbm;
     if (not defined $modh) {
         return();
@@ -256,7 +286,38 @@ sub get_module {
         return();
     }
 
-    PAR->import( { file => $local_par_file, fallback => ($fallback?1:0) } );
+    return $local_par_file;
+}
+
+=head2 install_module
+
+Works the same as C<get_module> but instead of loading the
+F<.par> file using PAR, it installs its contents using
+L<PAR::Dist>'s C<install_par()> routine.
+
+First argument must be the namespace of a module to install.
+
+Note that this method always installs the whole F<.par> distribution
+that contains the newest version of the specified namespace and not
+only the F<.pm> file from the distribution which contains the
+specified namespace.
+
+Returns the name of the local F<.par> file which was installed or
+the empty list on failure.
+
+=cut
+
+
+sub install_module {
+    my $self = shift;
+    my $namespace = shift;
+    
+    $self->{error} = undef;
+    
+    my $local_par_file = $self->_fetch_module($namespace);
+    return() if not defined $local_par_file;
+    
+    PAR::Dist::install_par( $local_par_file ) or return ();
     
     return $local_par_file;
 }
@@ -302,7 +363,11 @@ sub run_script {
     if (not defined $local_par_file or not -f $local_par_file) {
         return();
     }
-
+    
+    if ($self->{auto_install}) {
+        PAR::Dist::install_par( $local_par_file ) or return ();
+    }
+    
     @ARGV = @_;
     PAR->import( { file => $local_par_file, run => $script } );
     

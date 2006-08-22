@@ -1,5 +1,10 @@
 Revision history for Perl extension PAR::Repository::client.
 
+0.04  Tue Aug 22 12:52 2006
+    - Added install_module() functionality.
+    - Added "auto_install" flag to new().
+    - Fixed 03prefered_distribution.t.
+
 0.03  Fri Aug 11 16:14 2006
     - Workaround for YAML::Syck/Tiny bug.
     - Added run_script which runs a script from a repository.

@@ -1,6 +1,9 @@
 use strict;
 use warnings;
 use Config;
+
+BEGIN {eval "require Errno;"; };
+
 use Test::More tests => 3;
 
 my %copy = %Config::Config;
