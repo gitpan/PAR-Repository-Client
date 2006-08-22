@@ -1,5 +1,8 @@
 Revision history for Perl extension PAR::Repository::client.
 
+0.05  Tue Aug 22 16:02 2006
+    - Added upgrade_module() functionality.
+
 0.04  Tue Aug 22 12:52 2006
     - Added install_module() functionality.
     - Added "auto_install" flag to new().

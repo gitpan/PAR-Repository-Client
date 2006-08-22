@@ -23,7 +23,7 @@ require File::Temp;
 require File::Copy;
 require YAML::Tiny;
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 # list compatible repository versions
 our $Compatible_Versions = {
@@ -105,6 +105,13 @@ If the optional I<auto_install> parameter is set to a true value
 installed on the local system instead. In this context, please
 refer to the C<install_module()> method.
 
+Similar to I<auto_install>, the I<auto_upgrade> parameter installs
+a distribution that is about to be loaded - but only if the
+specified module does not exist on the local system yet or is outdated.
+
+You cannot set both I<auto_install> and I<auto_upgrade>. If you do,
+you will get a fatal error.
+
 Upon client creation, the repository's version is validated to be
 compatible with this version of the client.
 
@@ -128,6 +135,10 @@ sub new {
         $obj_class = 'HTTP';
     }
     
+    if ($args{auto_install} and $args{auto_upgrade}) {
+        croak(__PACKAGE__."->new(): You can only specify one of 'auto_upgrade' and 'auto_install'");
+    }
+    
     my $self = bless {
         uri => $uri,
         error => '',
@@ -135,6 +146,7 @@ sub new {
         modules_dbm_hash => undef,
         info => undef, # used for YAML info caching
         auto_install => $args{auto_install},
+        auto_upgrade => $args{auto_upgrade},
     } => "PAR::Repository::Client::$obj_class";
     
     $self->_init(\%args);
@@ -173,10 +185,7 @@ sub require_module {
     $self->{error} = undef;
 
     # fetch the module, load preferably (fallback => 0)
-    my $file =
-        $self->{auto_install}
-        ? $self->install_module($namespace)
-        : $self->get_module($namespace, 0);
+    my $file = $self->get_module($namespace, 0);
     
     eval "require $namespace;";
     if ($@) {
@@ -246,7 +255,9 @@ sub get_module {
     my $local_par_file;
     if ($self->{auto_install}) {
         $local_par_file = $self->install_module($namespace);
-        return() if not defined $local_par_file;
+    }
+    elsif ($self->{auto_upgrade}) {
+        $local_par_file = $self->upgrade_module($namespace);
     }
     else {
         $local_par_file = $self->_fetch_module($namespace);
@@ -254,6 +265,7 @@ sub get_module {
         
         PAR->import( { file => $local_par_file, fallback => ($fallback?1:0) } );
     }
+    return() if not defined $local_par_file;
         
     return $local_par_file;
 }
@@ -307,7 +319,6 @@ the empty list on failure.
 
 =cut
 
-
 sub install_module {
     my $self = shift;
     my $namespace = shift;
@@ -322,6 +333,80 @@ sub install_module {
     return $local_par_file;
 }
 
+
+=head2 upgrade_module
+
+Works the same as C<get_module> but instead of loading the
+F<.par> file using PAR, it checks whether the local version of
+the module is current. If it isn't, the distribution containing
+the newest version of the module is installed using
+L<PAR::Dist>'s C<install_par()> routine.
+
+First argument must be the namespace of a module to upgrade.
+
+Note that this method always installs the whole F<.par> distribution
+that contains the newest version of the specified namespace and not
+only the F<.pm> file from the distribution which contains the
+specified namespace.
+
+Returns the name of the local F<.par> file which was installed or
+the empty list on failure or if the local version of the module is
+already current.
+
+=cut
+
+sub upgrade_module {
+    my $self = shift;
+    my $namespace = shift;
+    
+    $self->{error} = undef;
+    
+    # get local version
+    my $local_version;
+    eval "require $namespace; \$local_version = ${namespace}->VERSION;";
+    
+    # no local version found. Install from repo
+    if (not defined $local_version) {
+        my $mod = $namespace;
+        $mod =~ s/::/\//;
+        $mod .= '.pm';
+        delete $INC{$mod};
+        return $self->install_module($namespace);
+    }
+    
+    # The following code is all for determining the newest
+    # version in the repository.
+    my ($modh) = $self->_modules_dbm;
+    if (not defined $modh) {
+        return();
+    }
+
+    my $dists = $modh->{$namespace};
+    if (not defined $dists) {
+        $self->{error} = "Could not find module '$namespace' in the repository.";
+        return();
+    }
+
+    my $dist = $self->prefered_distribution($namespace, $dists);
+    if (not defined $dist) {
+        $self->{error} = "PAR: Could not find a distribution for package '$namespace'";
+        return();
+    }
+
+    my $repo_version = $modh->{$namespace}{$dist};
+
+    if ($repo_version > $local_version) {
+        my $mod = $namespace;
+        $mod =~ s/::/\//;
+        $mod .= '.pm';
+        delete $INC{$mod};
+        return $self->install_module($namespace);
+    }
+    
+    return();
+}
+
+
 =head2 run_script
 
 First parameter must be a script name.
@@ -332,6 +417,11 @@ and appends the downloaded PAR distribution to the list of
 PARs to load from.
 
 Then, it runs the script. It does not return unless some error occurrs.
+
+If either I<auto_install> or I<auto_upgrade> were specified as
+parameters to the constructor, the downloaded PAR distribution will
+be installed regardless of the versions of any previously installed
+scripts. This differs from the behaviour for mdoules.
 
 =cut
 
@@ -367,6 +457,10 @@ sub run_script {
     if ($self->{auto_install}) {
         PAR::Dist::install_par( $local_par_file ) or return ();
     }
+    elsif ($self->{auto_upgrade}) {
+        # FIXME This is not the right way to do it!
+        PAR::Dist::install_par( $local_par_file ) or return ();
+    }
     
     @ARGV = @_;
     PAR->import( { file => $local_par_file, run => $script } );
@@ -374,7 +468,6 @@ sub run_script {
     # doesn't happen!?
     return 1;
 }
-
 
 
 =head2 error
