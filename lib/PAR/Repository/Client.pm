@@ -23,11 +23,16 @@ require File::Temp;
 require File::Copy;
 require YAML::Tiny;
 
-our $VERSION = '0.05';
+our $VERSION = '0.10';
 
 # list compatible repository versions
+# This is a list of numbers of the form "\d+.\d".
+# Before comparison, any versions are reduced to the
+# first digit after the period.
+# Incompatible changes require a change in version in the
+# first digit after the period.
 our $Compatible_Versions = {
-    '0.03' => 1,
+    '0.1' => 1,
 };
 
 =head1 NAME
@@ -566,10 +571,17 @@ sub validate_repository_version {
         $self->{error} = "Repository info file ('repository_info.yml') does not contain a version.";
         return();
     }
-    elsif (
+    
+    # check for compatibility
+    my $repo_version = $info->[0]{repository_version};
+    
+    my $main_repo_version = $repo_version;
+    $main_repo_version =~ s/^(\d+\.\d).*$/$1/;
+    
+    if (
         not exists
         $PAR::Repository::Client::Compatible_Versions->{
-            $info->[0]{repository_version}
+            $main_repo_version
         }
     ) {
         $self->{error} = "Repository has an incompatible version (".$info->[0]{repository_version}.")";
