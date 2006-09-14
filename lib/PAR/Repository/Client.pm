@@ -23,7 +23,7 @@ require File::Temp;
 require File::Copy;
 require YAML::Tiny;
 
-our $VERSION = '0.10';
+our $VERSION = '0.11';
 
 # list compatible repository versions
 # This is a list of numbers of the form "\d+.\d".
