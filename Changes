@@ -1,5 +1,14 @@
 Revision history for Perl extension PAR::Repository::client.
 
+0.12  Fri Sep 15 10:50 2006
+    - Added dependency on the new PAR::Repository::Client which defines
+      a unified interface for repository queries from both client and
+      server side software.
+    - _modules_dbm => modules_dbm
+    - _scripts_dbm => scripts_dbm
+    - _close_modules_dbm => close_modules_dbm
+    - _close_scripts_dbm => close_scripts_dbm
+
 0.11  Mon Aug 28 10:28 2006
     - Explicitly depending on PAR::Dist 0.18.
     - Added optional POD tests

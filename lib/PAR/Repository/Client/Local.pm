@@ -96,7 +96,7 @@ sub validate_repository {
     my $self = shift;
     $self->{error} = undef;
 
-    my $mod_db = $self->_modules_dbm;
+    my $mod_db = $self->modules_dbm;
     return() unless defined $mod_db;
     
     return() unless $self->validate_repository_version;

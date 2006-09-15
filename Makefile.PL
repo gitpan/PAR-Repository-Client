@@ -16,6 +16,7 @@ WriteMakefile(
         'LWP::Simple' => '0',
         'Archive::Zip' => '0',
         'YAML::Tiny' => '0',
+        'PAR::Repository::Query' => '0.12',
     }, # e.g., Module::Name => 1.1
     ($] >= 5.005 ?     ## Add these new keywords supported since 5.005
       (ABSTRACT_FROM  => 'lib/PAR/Repository/Client.pm', # retrieve abstract from module

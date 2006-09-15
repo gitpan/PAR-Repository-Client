@@ -3,11 +3,25 @@ package PAR::Repository::Client;
 use 5.006;
 use strict;
 use warnings;
+
+our $VERSION = '0.12';
+
+# list compatible repository versions
+# This is a list of numbers of the form "\d+.\d".
+# Before comparison, any versions are reduced to the
+# first digit after the period.
+# Incompatible changes require a change in version in the
+# first digit after the period.
+our $Compatible_Versions = {
+    '0.1' => 1,
+};
+
 use constant MODULES_DBM_FILE  => 'modules_dists.dbm';
 use constant SYMLINKS_DBM_FILE => 'symlinks.dbm';
 use constant SCRIPTS_DBM_FILE  => 'scripts_dists.dbm';
 use constant REPOSITORY_INFO_FILE => 'repository_info.yml';
 
+use base 'PAR::Repository::Query';
 require PAR::Repository::Client::HTTP;
 require PAR::Repository::Client::Local;
 
@@ -22,18 +36,6 @@ require Archive::Zip;
 require File::Temp;
 require File::Copy;
 require YAML::Tiny;
-
-our $VERSION = '0.11';
-
-# list compatible repository versions
-# This is a list of numbers of the form "\d+.\d".
-# Before comparison, any versions are reduced to the
-# first digit after the period.
-# Incompatible changes require a change in version in the
-# first digit after the period.
-our $Compatible_Versions = {
-    '0.1' => 1,
-};
 
 =head1 NAME
 
@@ -72,6 +74,10 @@ two ways: On your local filesystem or via HTTP. The
 access methods are implemented in
 L<PAR::Repository::Client::HTTP> and L<PAR::Repository::Client::Local>.
 Any common code is in this module.
+
+L<PAR::Repository::Query> implements the querying interface. The methods
+described in that module's documentation can be called on
+C<PAR::Repository::Client> objects.
 
 =head2 PAR REPOSITORIES
 
@@ -281,7 +287,7 @@ sub _fetch_module {
     
     $self->{error} = undef;
 
-    my ($modh) = $self->_modules_dbm;
+    my ($modh) = $self->modules_dbm;
     if (not defined $modh) {
         return();
     }
@@ -381,7 +387,7 @@ sub upgrade_module {
     
     # The following code is all for determining the newest
     # version in the repository.
-    my ($modh) = $self->_modules_dbm;
+    my ($modh) = $self->modules_dbm;
     if (not defined $modh) {
         return();
     }
@@ -437,7 +443,7 @@ sub run_script {
     
     $self->{error} = undef;
 
-    my ($scrh) = $self->_scripts_dbm;
+    my ($scrh) = $self->scripts_dbm;
     if (not defined $scrh) {
         return();
     }
@@ -590,9 +596,7 @@ sub validate_repository_version {
     return 1;
 }
 
-=head2 _modules_dbm
-
-This is a private method.
+=head2 modules_dbm
 
 Fetches the C<modules_dists.dbm> database from the repository,
 ties it to a L<DBM::Deep> object and returns a tied hash
@@ -607,11 +611,11 @@ implemented in a subclass such as L<PAR::Repository::Client::HTTP>.
 
 =cut
 
-sub _modules_dbm {
+sub modules_dbm {
     my $self = shift;
     $self->{error} = undef;
     
-    $self->_close_modules_dbm;
+    $self->close_modules_dbm;
     
     my $file = $self->_fetch_dbm_file(MODULES_DBM_FILE().".zip");
     # (error set by _fetch_dbm_file)
@@ -642,9 +646,7 @@ sub _modules_dbm {
 	return (\%hash, $tempfile);
 }
 
-=head2 _scripts_dbm
-
-This is a private method.
+=head2 scripts_dbm
 
 Fetches the C<scripts_dists.dbm> database from the repository,
 ties it to a L<DBM::Deep> object and returns a tied hash
@@ -659,11 +661,11 @@ implemented in a subclass such as L<PAR::Repository::Client::HTTP>.
 
 =cut
 
-sub _scripts_dbm {
+sub scripts_dbm {
     my $self = shift;
     $self->{error} = undef;
     
-    $self->_close_scripts_dbm;
+    $self->close_scripts_dbm;
     
     my $file = $self->_fetch_dbm_file(SCRIPTS_DBM_FILE().".zip");
     # (error set by _fetch_dbm_file)
@@ -696,9 +698,7 @@ sub _scripts_dbm {
 
 
 
-=head2 _close_modules_dbm
-
-This is a private method.
+=head2 close_modules_dbm
 
 Closes the C<modules_dists.dbm> file and does all necessary
 cleaning up.
@@ -707,7 +707,7 @@ This is called when the object is destroyed.
 
 =cut
 
-sub _close_modules_dbm {
+sub close_modules_dbm {
 	my $self = shift;
 	my $hash = $self->{modules_dbm_hash};
 	return if not defined $hash;
@@ -723,9 +723,7 @@ sub _close_modules_dbm {
 	return 1;
 }
 
-=head2 _close_scripts_dbm
-
-This is a private method.
+=head2 close_scripts_dbm
 
 Closes the C<scripts_dists.dbm> file and does all necessary
 cleaning up.
@@ -734,7 +732,7 @@ This is called when the object is destroyed.
 
 =cut
 
-sub _close_scripts_dbm {
+sub close_scripts_dbm {
 	my $self = shift;
 	my $hash = $self->{scripts_dbm_hash};
 	return if not defined $hash;
@@ -786,8 +784,8 @@ sub _unzip_file {
 
 sub DESTROY {
     my $self = shift;
-    $self->_close_modules_dbm;
-    $self->_close_scripts_dbm;
+    $self->close_modules_dbm;
+    $self->close_scripts_dbm;
 }
 
 1;
@@ -799,6 +797,10 @@ This module is directly related to the C<PAR> project. You need to have
 basic familiarity with it. Its homepage is at L<http://par.perl.org/>
 
 See L<PAR>, L<PAR::Dist>, L<PAR::Repository>, etc.
+
+L<PAR::Repository::Query> implements the querying interface. The methods
+described in that module's documentation can be called on
+C<PAR::Repository::Client> objects.
 
 L<PAR::Repository> implements the server side creation and manipulation
 of PAR repositories.
