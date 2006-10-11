@@ -11,7 +11,7 @@ WriteMakefile(
         'DBM::Deep' => '0',
         'version' => '0.50',
         'File::Spec' => '0',
-        'PAR::Dist' => '0.18',
+        'PAR::Dist' => '0.20',
         'PAR' => '0.950',
         'LWP::Simple' => '0',
         'Archive::Zip' => '0',

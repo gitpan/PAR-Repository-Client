@@ -1,5 +1,8 @@
 Revision history for Perl extension PAR::Repository::client.
 
+0.13  Mon Oct  2 15:02 2006
+    - Added custom installation targets.
+
 0.12  Fri Sep 15 10:50 2006
     - Added dependency on the new PAR::Repository::Client which defines
       a unified interface for repository queries from both client and

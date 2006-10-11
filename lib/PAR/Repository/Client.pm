@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.12';
+our $VERSION = '0.13';
 
 # list compatible repository versions
 # This is a list of numbers of the form "\d+.\d".
@@ -123,6 +123,9 @@ specified module does not exist on the local system yet or is outdated.
 You cannot set both I<auto_install> and I<auto_upgrade>. If you do,
 you will get a fatal error.
 
+In order to control where the modules are installed to, you can
+use the C<installation_targets> method.
+
 Upon client creation, the repository's version is validated to be
 compatible with this version of the client.
 
@@ -158,6 +161,7 @@ sub new {
         info => undef, # used for YAML info caching
         auto_install => $args{auto_install},
         auto_upgrade => $args{auto_upgrade},
+        installation_targets => {},
     } => "PAR::Repository::Client::$obj_class";
     
     $self->_init(\%args);
@@ -339,7 +343,10 @@ sub install_module {
     my $local_par_file = $self->_fetch_module($namespace);
     return() if not defined $local_par_file;
     
-    PAR::Dist::install_par( $local_par_file ) or return ();
+    PAR::Dist::install_par(
+        %{$self->installation_targets()},
+        dist => $local_par_file,
+    ) or return ();
     
     return $local_par_file;
 }
@@ -466,18 +473,55 @@ sub run_script {
     }
     
     if ($self->{auto_install}) {
-        PAR::Dist::install_par( $local_par_file ) or return ();
+        PAR::Dist::install_par(
+            %{ $self->installation_targets() },
+            dist => $local_par_file,
+        ) or return ();
     }
     elsif ($self->{auto_upgrade}) {
         # FIXME This is not the right way to do it!
-        PAR::Dist::install_par( $local_par_file ) or return ();
+        PAR::Dist::install_par(
+            %{ $self->installation_targets() },
+            dist => $local_par_file,
+        ) or return ();
     }
     
-    @ARGV = @_;
     PAR->import( { file => $local_par_file, run => $script } );
     
     # doesn't happen!?
     return 1;
+}
+
+
+=head2 installation_targets
+
+Sets the installation targets for modules and scripts if any arguments are
+passed. Returns the current setting otherwise.
+
+Arguments should be key/value pairs of installation targets
+as recognized by the C<install_par()> routine in L<PAR::Dist>.
+The contents of this hash are passed verbatim to every call to
+C<install_par()> made by this package.
+
+In this context, note that aside from the normal i<inst_lib> and similar
+targets, you can also specify a I<custom_targets> element starting with
+C<PAR::Dist> version 0.20. For details,
+refer to the L<PAR::Dist> manual.
+
+Returns a hash reference to a has containing the installation targets.
+
+=cut
+
+sub installation_targets {
+    my $self = shift;
+    if (not @_) {
+        return {%{$self->{installation_targets}}};
+    }
+    
+    my %args = @_;
+
+    $self->{installation_targets} = \%args;
+    return {%{$self->{installation_targets}}};
 }
 
 
