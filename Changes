@@ -1,5 +1,10 @@
 Revision history for Perl extension PAR::Repository::client.
 
+0.14  Mon Oct 12 16:05 2006
+    - PAR::Repository::Client::HTTP::_fetch_file was generating rather
+      long local file names. In fact long enough file names that some systems
+      go belly-up. Now generating shorter file names.
+
 0.13  Mon Oct  2 15:02 2006
     - Added custom installation targets.
 

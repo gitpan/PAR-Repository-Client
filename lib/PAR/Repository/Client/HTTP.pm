@@ -10,7 +10,7 @@ use base 'PAR::Repository::Client';
 
 use Carp qw/croak/;
 
-our $VERSION = '0.01';
+our $VERSION = '0.14';
 
 =head1 NAME
 
@@ -91,8 +91,9 @@ sub fetch_par {
         mkdir $ENV{PAR_TEMP}, 0777;
         %escapes = map { chr($_) => sprintf("%%%02X", $_) } 0..255 unless %escapes;
         
-        my $local_file = $file;
-        $local_file =~ s/([^\w\.])/$escapes{$1}/g;
+        $file =~ m!/([^/]+)$!;
+        my $local_file = (defined($1) ? $1 : $file);
+        $local_file =~ s/([^\w\._])/$escapes{$1}/g;
         $local_file = File::Spec->catfile( $ENV{PAR_TEMP}, $local_file);
 
         my $rc = LWP::Simple::mirror( $file, $local_file );
