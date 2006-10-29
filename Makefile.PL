@@ -6,6 +6,7 @@ use ExtUtils::MakeMaker;
 WriteMakefile(
     NAME              => 'PAR::Repository::Client',
     VERSION_FROM      => 'lib/PAR/Repository/Client.pm', # finds $VERSION
+    LICENSE => 'perl',
     PREREQ_PM         => {
 #'perl'      => '5.6',
         'DBM::Deep' => '0',

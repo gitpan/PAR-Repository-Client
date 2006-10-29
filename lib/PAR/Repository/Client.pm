@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.14';
+our $VERSION = '0.15';
 
 # list compatible repository versions
 # This is a list of numbers of the form "\d+.\d".
@@ -460,7 +460,6 @@ sub run_script {
         $self->{error} = "Could not find script '$script' in the repository.";
         return();
     }
-
     my $dist = $self->prefered_distribution($script, $dists);
     if (not defined $dist) {
         $self->{error} = "PAR: Could not find a distribution for script '$script'";
@@ -572,7 +571,7 @@ sub prefered_distribution {
         next if not defined $a or not defined $p;
         # skip the ones for other archs
         next if $a ne $this_arch and $a ne 'any_arch';
-        next if $p ne $this_pver and $a ne 'any_version';
+        next if $p ne $this_pver and $p ne 'any_version';
         
         # as a fallback while sorting, prefer arch and pver
         # specific dists to fallbacks

@@ -4,9 +4,9 @@ lib/PAR/Repository/Client/HTTP.pm
 lib/PAR/Repository/Client/Local.pm
 Makefile.PL
 MANIFEST			This list of files
-META.yml
 README
 t/00pod.t
 t/00podcover.t
 t/01basic.t
 t/03prefered_distribution.t
+META.yml                                 Module meta-data (added by MakeMaker)
