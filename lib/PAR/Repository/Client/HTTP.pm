@@ -4,13 +4,15 @@ use 5.006;
 use strict;
 use warnings;
 
+use vars qw/$ua/;
 require LWP::Simple;
+LWP::Simple->import('$ua');
 
 use base 'PAR::Repository::Client';
 
 use Carp qw/croak/;
 
-our $VERSION = '0.14';
+our $VERSION = '0.16';
 
 =head1 NAME
 
@@ -22,6 +24,7 @@ PAR::Repository::Client::HTTP - PAR repository via HTTP
   
   my $client = PAR::Repository::Client->new(
     uri => 'http:///foo/repository',
+    http_timeout => 20, # but default is 180s
   );
 
 =head1 DESCRIPTION
@@ -96,7 +99,11 @@ sub fetch_par {
         $local_file =~ s/([^\w\._])/$escapes{$1}/g;
         $local_file = File::Spec->catfile( $ENV{PAR_TEMP}, $local_file);
 
+        my $timeout = $self->{http_timeout};
+        my $old_timeout = $ua->timeout();
+        $ua->timeout($timeout) if defined $timeout;
         my $rc = LWP::Simple::mirror( $file, $local_file );
+        $ua->timeout($old_timeout) if defined $timeout;
         if (!LWP::Simple::is_success($rc) and not $rc == HTTP::Status::RC_NOT_MODIFIED()) {
             $self->{error} = "Error $rc: " . LWP::Simple::status_message($rc) . " ($file)\n";
             return();
@@ -212,9 +219,12 @@ Should return a true value on success.
 =cut
 
 sub _init {
+    my $self = shift;
+    my $args = shift || {};
     # We implement additional object attributes here
-    # Currently no extra attributes...
-    
+    $self->{http_timeout} = $args->{http_timeout};
+    $self->{http_timeout} = 180 if not defined $self->{http_timeout};
+
     return 1;
 }
 
@@ -241,11 +251,11 @@ The repository access is done via L<LWP::Simple>.
 
 =head1 AUTHOR
 
-Steffen Müller, E<lt>smueller@cpan.orgE<gt>
+Steffen Mueller, E<lt>smueller@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2006 by Steffen Müller
+Copyright (C) 2006-2007 by Steffen Mueller
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.6 or,

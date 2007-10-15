@@ -9,7 +9,7 @@ use base 'PAR::Repository::Client';
 use Carp qw/croak/;
 require File::Copy;
 
-our $VERSION = '0.01';
+our $VERSION = '0.16';
 
 =head1 NAME
 
@@ -221,11 +221,11 @@ L<PAR::WebStart> is doing something similar but is otherwise unrelated.
 
 =head1 AUTHOR
 
-Steffen Müller, E<lt>smueller@cpan.orgE<gt>
+Steffen Mueller, E<lt>smueller@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2006 by Steffen Müller
+Copyright (C) 2006-2007 by Steffen Mueller
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.6 or,

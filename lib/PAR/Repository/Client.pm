@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.15';
+our $VERSION = '0.16';
 
 # list compatible repository versions
 # This is a list of numbers of the form "\d+.\d".
@@ -47,6 +47,7 @@ PAR::Repository::Client - Access PAR repositories
   
   my $client = PAR::Repository::Client->new(
     uri => 'http://foo/repository',
+    http_timeout => 20, # default is 180s
   );
   
   # This is happening at run-time, of course:
@@ -92,7 +93,7 @@ If you are unsure what PAR archives are, then have a look
 at the L<SEE ALSO> section below, which points you at the
 relevant locations.
 
-=head1 METHODS
+=head1 PUBLIC METHODS
 
 Following is a list of class and instance methods.
 (Instance methods until otherwise mentioned.)
@@ -128,6 +129,8 @@ use the C<installation_targets> method.
 
 Upon client creation, the repository's version is validated to be
 compatible with this version of the client.
+
+You may specify a C<http_timeout> in seconds.
 
 =cut
 
@@ -504,10 +507,9 @@ C<install_par()> made by this package.
 
 In this context, note that aside from the normal i<inst_lib> and similar
 targets, you can also specify a I<custom_targets> element starting with
-C<PAR::Dist> version 0.20. For details,
-refer to the L<PAR::Dist> manual.
+C<PAR::Dist> version 0.20. For details, refer to the L<PAR::Dist> manual.
 
-Returns a hash reference to a has containing the installation targets.
+Returns a hash reference to a hash containing the installation targets.
 
 =cut
 
@@ -538,17 +540,29 @@ sub error {
     return(defined($err) ? $err : ());
 }
 
+=head1 OTHER METHODS
+
+These methods, while part of the official interface, should need rarely be
+called by most users.
 
 =head2 prefered_distribution
 
+This method decides from which distribution a module will be loaded.
+It returns the corresponding distribution file name.
+
 Takes a namespace as first argument followed by a reference
 to a hash of distribution file names with associated module
-versions. The file name should have the following form:
+versions. Example:
 
-  Math-Symbolic-0.502-x86_64-linux-gnu-thread-multi-5.8.7.par
+  'Math::Symbolic',
+  { 'Math-Symbolic-0.502-x86_64-linux-gnu-thread-multi-5.8.7.par' => '0.502',
+    'Math-Symbolic-0.128-any_arch-any_version.par' => '0.128'
+  }
 
-This method decides which distribution to load and returns
-that file name.
+This means that the C<Math::Symbolic> namespace was found in version C<0.502>
+and C<0.128> in said distribution files. If you were using linux on an x86_64
+computer using perl 5.8.7, this would return the first file name. Otherwise,
+you would only get version C<0.128>.
 
 =cut
 
@@ -791,7 +805,10 @@ sub close_scripts_dbm {
 	return 1;
 }
 
+=head1 PRIVATE METHODS
 
+These private methods should not be relied upon from the outside of
+the module.
 
 =head2 _unzip_file
 
@@ -852,11 +869,11 @@ L<PAR::WebStart> is doing something similar but is otherwise unrelated.
 
 =head1 AUTHOR
 
-Steffen Müller, E<lt>smueller@cpan.orgE<gt>
+Steffen Mueller, E<lt>smueller@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2006 by Steffen Müller
+Copyright (C) 2006-2007 by Steffen Mueller
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.6 or,
