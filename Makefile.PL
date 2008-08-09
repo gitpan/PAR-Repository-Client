@@ -9,11 +9,11 @@ WriteMakefile(
     LICENSE => 'perl',
     PREREQ_PM         => {
 #'perl'      => '5.6',
-        'DBM::Deep' => '0',
+        'DBM::Deep' => '1.0012',
         'version' => '0.50',
         'File::Spec' => '0',
         'PAR::Dist' => '0.20',
-        'PAR' => '0.950',
+        'PAR' => '0.981_01',
         'LWP::Simple' => '0',
         'Archive::Zip' => '0',
         'YAML::Tiny' => '0',

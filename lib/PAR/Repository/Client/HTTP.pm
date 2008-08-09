@@ -12,7 +12,7 @@ use base 'PAR::Repository::Client';
 
 use Carp qw/croak/;
 
-our $VERSION = '0.16';
+our $VERSION = '0.17';
 
 =head1 NAME
 
@@ -61,57 +61,57 @@ First argument must be the distribution name to fetch.
 =cut
 
 sub fetch_par {
-    my $self = shift;
-    $self->{error} = undef;
-    my $dist = shift;
-    return() if not defined $dist;
-    
-    my $url = $self->{uri};
-    $url =~ s/\/$//;
-    
-    my ($n, $v, $a, $p) = PAR::Dist::parse_dist_name($dist);
-    $url .= "/$a/$p/$n-$v-$a-$p.par";
-    
-    my $file = $self->_fetch_file($url);
+  my $self = shift;
+  $self->{error} = undef;
+  my $dist = shift;
+  return() if not defined $dist;
 
-    if (not defined $file) {
-        $self->{error} = "Could not fetch distribution from URI '$url'";
-        return();
-    }
+  my $url = $self->{uri};
+  $url =~ s/\/$//;
 
-    return $file;
+  my ($n, $v, $a, $p) = PAR::Dist::parse_dist_name($dist);
+  $url .= "/$a/$p/$n-$v-$a-$p.par";
+
+  my $file = $self->_fetch_file($url);
+
+  if (not defined $file) {
+    $self->{error} = "Could not fetch distribution from URI '$url'";
+    return();
+  }
+
+  return $file;
 }
 
 
 {
-    my %escapes;
-    sub _fetch_file {
-        my $self = shift;
-        $self->{error} = undef;
-        my $file = shift;
-        
-        $ENV{PAR_TEMP} ||= File::Spec->catdir(File::Spec->tmpdir, 'par');
-        mkdir $ENV{PAR_TEMP}, 0777;
-        %escapes = map { chr($_) => sprintf("%%%02X", $_) } 0..255 unless %escapes;
-        
-        $file =~ m!/([^/]+)$!;
-        my $local_file = (defined($1) ? $1 : $file);
-        $local_file =~ s/([^\w\._])/$escapes{$1}/g;
-        $local_file = File::Spec->catfile( $ENV{PAR_TEMP}, $local_file);
+  my %escapes;
+  sub _fetch_file {
+    my $self = shift;
+    $self->{error} = undef;
+    my $file = shift;
 
-        my $timeout = $self->{http_timeout};
-        my $old_timeout = $ua->timeout();
-        $ua->timeout($timeout) if defined $timeout;
-        my $rc = LWP::Simple::mirror( $file, $local_file );
-        $ua->timeout($old_timeout) if defined $timeout;
-        if (!LWP::Simple::is_success($rc) and not $rc == HTTP::Status::RC_NOT_MODIFIED()) {
-            $self->{error} = "Error $rc: " . LWP::Simple::status_message($rc) . " ($file)\n";
-            return();
-        }
-        
-        return $local_file if -f $local_file;
-        return;
+    $ENV{PAR_TEMP} ||= File::Spec->catdir(File::Spec->tmpdir, 'par');
+    mkdir $ENV{PAR_TEMP}, 0777;
+    %escapes = map { chr($_) => sprintf("%%%02X", $_) } 0..255 unless %escapes;
+
+    $file =~ m!/([^/]+)$!;
+    my $local_file = (defined($1) ? $1 : $file);
+    $local_file =~ s/([^\w\._])/$escapes{$1}/g;
+    $local_file = File::Spec->catfile( $ENV{PAR_TEMP}, $local_file);
+
+    my $timeout = $self->{http_timeout};
+    my $old_timeout = $ua->timeout();
+    $ua->timeout($timeout) if defined $timeout;
+    my $rc = LWP::Simple::mirror( $file, $local_file );
+    $ua->timeout($old_timeout) if defined $timeout;
+    if (!LWP::Simple::is_success($rc) and not $rc == HTTP::Status::RC_NOT_MODIFIED()) {
+      $self->{error} = "Error $rc: " . LWP::Simple::status_message($rc) . " ($file)\n";
+      return();
     }
+
+    return $local_file if -f $local_file;
+    return;
+  }
 }
 
 
@@ -128,15 +128,15 @@ failure.
 =cut
 
 sub validate_repository {
-    my $self = shift;
-    $self->{error} = undef;
+  my $self = shift;
+  $self->{error} = undef;
 
-    my $mod_db = $self->modules_dbm;
-    return() if not defined $mod_db;
+  my $mod_db = $self->modules_dbm;
+  return() if not defined $mod_db;
 
-    return() if not $self->validate_repository_version;
-    
-    return 1;
+  return() if not $self->validate_repository_version;
+
+  return 1;
 }
 
 
@@ -150,32 +150,33 @@ This is a private method.
 =cut
 
 sub _repository_info {
-    my $self = shift;
-    $self->{error} = undef;
-    return $self->{info} if defined $self->{info};
+  my $self = shift;
+  $self->{error} = undef;
+  return $self->{info} if defined $self->{info};
 
-    my $url = $self->{uri};
-    $url =~ s/\/$//;
-    
-    my $file = $self->_fetch_file(
-        $url.'/'.PAR::Repository::Client::REPOSITORY_INFO_FILE()
-    );
-    
-    return() if not defined $file;
+  my $url = $self->{uri};
+  $url =~ s/\/$//;
 
-    my $yaml = YAML::Tiny->new->read($file);
-    if (not defined $yaml) {
-        $self->{error} = "Error reading repository info from YAML file.";
-        return();
-    }
-    
-    # workaround for possible YAML::Syck/YAML::Tiny bug
-    # This is not the right way to do it!
-    @$yaml = ($yaml->[1]) if @$yaml > 1;
+  my $file = $self->_fetch_file(
+    $url.'/'.PAR::Repository::Client::REPOSITORY_INFO_FILE()
+  );
 
-    $self->{info} = $yaml;
-    return $yaml;
+  return() if not defined $file;
+
+  my $yaml = YAML::Tiny->new->read($file);
+  if (not defined $yaml) {
+    $self->{error} = "Error reading repository info from YAML file.";
+    return();
+  }
+
+  # workaround for possible YAML::Syck/YAML::Tiny bug
+  # This is not the right way to do it!
+  @$yaml = ($yaml->[1]) if @$yaml > 1;
+
+  $self->{info} = $yaml;
+  return $yaml;
 }
+
 
 =head2 _fetch_dbm_file
 
@@ -191,20 +192,59 @@ method in case of failure.
 =cut
 
 sub _fetch_dbm_file {
-    my $self = shift;
-    $self->{error} = undef;
-    my $file = shift;
-    return if not defined $file;
+  my $self = shift;
+  $self->{error} = undef;
+  my $file = shift;
+  return if not defined $file;
 
-    my $url = $self->{uri};
-    $url =~ s/\/$//;
+  my $url = $self->{uri};
+  $url =~ s/\/$//;
 
-    my $local = $self->_fetch_file("$url/$file");
-    return() if not defined $local or not -f $local;
-    
-    return $local;
+  my $local = $self->_fetch_file("$url/$file");
+  return() if not defined $local or not -f $local;
+
+  return $local;
 }
 
+
+=head2 _dbm_checksums
+
+This is a private method.
+
+If the repository has a checksums file (new feature of
+C<PAR::Repository> 0.15), this method returns a hash  
+associating the DBM file names (e.g. C<foo_bar.dbm.zip>)
+with their MD5 hashes (base 64).
+
+This method B<always> queries the repository and never caches
+the information locally. That's the whole point of having the
+checksums.
+
+In case the repository does not have checksums, this method
+returns the empty list, so check the return value!
+The error message (see the C<error()> method) will be
+I<"Repository does not support checksums"> in that case.
+
+=cut
+
+sub _dbm_checksums {
+  my $self = shift;
+  $self->{error} = undef;
+
+  my $url = $self->{uri};
+  $url =~ s/\/$//;
+
+  my $file = $self->_fetch_file(
+    $url.'/'.PAR::Repository::Client::DBM_CHECKSUMS_FILE()
+  );
+
+  if (not defined $file) {
+    $self->{error} = "Repository does not support checksums";
+    return();
+  }
+
+  return $self->_parse_dbm_checksums($file);
+}
 
 
 =head2 _init
@@ -219,13 +259,13 @@ Should return a true value on success.
 =cut
 
 sub _init {
-    my $self = shift;
-    my $args = shift || {};
-    # We implement additional object attributes here
-    $self->{http_timeout} = $args->{http_timeout};
-    $self->{http_timeout} = 180 if not defined $self->{http_timeout};
+  my $self = shift;
+  my $args = shift || {};
+  # We implement additional object attributes here
+  $self->{http_timeout} = $args->{http_timeout};
+  $self->{http_timeout} = 180 if not defined $self->{http_timeout};
 
-    return 1;
+  return 1;
 }
 
 
@@ -255,7 +295,7 @@ Steffen Mueller, E<lt>smueller@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2006-2007 by Steffen Mueller
+Copyright (C) 2006-2008 by Steffen Mueller
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.6 or,

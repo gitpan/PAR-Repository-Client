@@ -1,4 +1,20 @@
-Revision history for Perl extension PAR::Repository::client.
+Revision history for Perl extension PAR::Repository::Client.
+
+0.19_01  Sat Aug 10 00:06 2008
+    - Require PAR 0.982: 
+    --> Only load PAR.pm when really needed, otherwise load just
+        the new PAR::Setup* modules to setup the environment.
+
+0.18  Tue Jun  3 15:29 2008
+    - Don't refetch DBM files when deemed not necessary because the
+      checksums match..
+    - Add getters for dbm checksums in case the repository
+      supports them.
+    - Add PAR::Repository::Client::Util for small, common
+      private utility methods.
+
+0.17  Sun Jun  1 15:32 2008
+    - No autoflushing of DBM::Deep objects.
 
 0.16  Mon Oct 15 10:25 2007
     - Add http_timeout option for HTTP transport.

@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.16';
+our $VERSION = '0.19_01';
 
 # list compatible repository versions
 # This is a list of numbers of the form "\d+.\d".
@@ -16,18 +16,20 @@ our $Compatible_Versions = {
     '0.1' => 1,
 };
 
-use constant MODULES_DBM_FILE  => 'modules_dists.dbm';
-use constant SYMLINKS_DBM_FILE => 'symlinks.dbm';
-use constant SCRIPTS_DBM_FILE  => 'scripts_dists.dbm';
+use constant MODULES_DBM_FILE     => 'modules_dists.dbm';
+use constant SYMLINKS_DBM_FILE    => 'symlinks.dbm';
+use constant SCRIPTS_DBM_FILE     => 'scripts_dists.dbm';
 use constant REPOSITORY_INFO_FILE => 'repository_info.yml';
+use constant DBM_CHECKSUMS_FILE   => 'dbm_checksums.txt';
 
 use base 'PAR::Repository::Query';
+use base 'PAR::Repository::Client::Util';
+
 require PAR::Repository::Client::HTTP;
 require PAR::Repository::Client::Local;
 
 use Carp qw/croak/;
 use File::Spec::Functions qw/splitpath/;
-use PAR;
 require version;
 require Config;
 require PAR::Dist;
@@ -135,44 +137,55 @@ You may specify a C<http_timeout> in seconds.
 =cut
 
 sub new {
-    my $proto = shift;
-    my $class = ref($proto) || $proto;
+  my $proto = shift;
+  my $class = ref($proto) || $proto;
 
-    croak(__PACKAGE__."->new() takes an even number of arguments.")
-      if @_ % 2;
-    my %args = @_;
-    
-    croak(__PACKAGE__."->new() needs an 'uri' argument.")
-      if not defined $args{uri};
-    
-    my $uri = $args{uri};
+  croak(__PACKAGE__."->new() takes an even number of arguments.")
+    if @_ % 2;
+  my %args = @_;
 
-    my $obj_class = 'Local';
-    if ($uri =~ /^https?:\/\//) {
-        $obj_class = 'HTTP';
-    }
-    
-    if ($args{auto_install} and $args{auto_upgrade}) {
-        croak(__PACKAGE__."->new(): You can only specify one of 'auto_upgrade' and 'auto_install'");
-    }
-    
-    my $self = bless {
-        uri => $uri,
-        error => '',
-        modules_dbm_temp_file => undef,
-        modules_dbm_hash => undef,
-        info => undef, # used for YAML info caching
-        auto_install => $args{auto_install},
-        auto_upgrade => $args{auto_upgrade},
-        installation_targets => {},
-    } => "PAR::Repository::Client::$obj_class";
-    
-    $self->_init(\%args);
+  croak(__PACKAGE__."->new() needs an 'uri' argument.")
+    if not defined $args{uri};
 
-    $self->validate_repository()
-      or croak $self->{error};
+  my $uri = $args{uri};
 
-    return $self;
+  my $obj_class = 'Local';
+  if ($uri =~ /^https?:\/\//) {
+    $obj_class = 'HTTP';
+  }
+
+  if ($args{auto_install} and $args{auto_upgrade}) {
+    croak(__PACKAGE__."->new(): You can only specify one of 'auto_upgrade' and 'auto_install'");
+  }
+
+  my $self = bless {
+    # the repository uri
+    uri => $uri,
+    # The last error message
+    error => '',
+    # The hash ref of checksums for checking whether we
+    # need to update the dbms
+    checksums => undef,
+    supports_checksums => undef,
+    # the modules- and scripts dbm storage
+    # both the local temp file for cleanup
+    # and the actual tied hash
+    modules_dbm_temp_file => undef,
+    modules_dbm_hash => undef,
+    scripts_dbm_temp_file => undef,
+    scripts_dbm_hash => undef,
+    info => undef, # used for YAML info caching
+    auto_install => $args{auto_install},
+    auto_upgrade => $args{auto_upgrade},
+    installation_targets => {}, # see PAR::Dist
+  } => "PAR::Repository::Client::$obj_class";
+
+  $self->_init(\%args);
+
+  $self->validate_repository()
+    or croak $self->{error};
+
+  return $self;
 }
 
 
@@ -198,20 +211,20 @@ C<error()> method.
 =cut
 
 sub require_module {
-    my $self = shift;
-    my $namespace = shift;
-    $self->{error} = undef;
+  my $self = shift;
+  my $namespace = shift;
+  $self->{error} = undef;
 
-    # fetch the module, load preferably (fallback => 0)
-    my $file = $self->get_module($namespace, 0);
-    
-    eval "require $namespace;";
-    if ($@) {
-        $self->{error} = "An error occurred while executing 'require $namespace;'. Error: $@";
-        return();
-    }
-    
-    return 1;
+  # fetch the module, load preferably (fallback => 0)
+  my $file = $self->get_module($namespace, 0);
+
+  eval "require $namespace;";
+  if ($@) {
+    $self->{error} = "An error occurred while executing 'require $namespace;'. Error: $@";
+    return();
+  }
+
+  return 1;
 }
 
 
@@ -226,22 +239,22 @@ C<import> call.
 =cut
 
 sub use_module {
-    my $self = shift;
-    my $namespace = shift;
-    my @args = @_;
-    $self->{error} = undef;
+  my $self = shift;
+  my $namespace = shift;
+  my @args = @_;
+  $self->{error} = undef;
 
-    my ($pkg) = caller();
-    
-    my $required = $self->require_module($namespace);
-    return() if not $required; # error set by require_module
+  my ($pkg) = caller();
+
+  my $required = $self->require_module($namespace);
+  return() if not $required; # error set by require_module
 
     eval "package $pkg; ${namespace}->import(\@args) if ${namespace}->can('import');";
-    if ($@) {
-        $self->{error} = "An error occurred while executing 'package $pkg; ${namespace}->import(\@args);'. Error: $@";
-        return();
-    }
-    return 1;
+  if ($@) {
+    $self->{error} = "An error occurred while executing 'package $pkg; ${namespace}->import(\@args);'. Error: $@";
+    return();
+  }
+  return 1;
 }
 
 =head2 get_module
@@ -264,59 +277,60 @@ doing a C<require()> of the module.
 
 
 sub get_module {
-    my $self = shift;
-    my $namespace = shift;
-    my $fallback = shift;
-    
-    $self->{error} = undef;
+  my $self = shift;
+  my $namespace = shift;
+  my $fallback = shift;
 
-    my $local_par_file;
-    if ($self->{auto_install}) {
-        $local_par_file = $self->install_module($namespace);
-    }
-    elsif ($self->{auto_upgrade}) {
-        $local_par_file = $self->upgrade_module($namespace);
-    }
-    else {
-        $local_par_file = $self->_fetch_module($namespace);
-        return() if not defined $local_par_file;
-        
-        PAR->import( { file => $local_par_file, fallback => ($fallback?1:0) } );
-    }
+  $self->{error} = undef;
+
+  my $local_par_file;
+  if ($self->{auto_install}) {
+    $local_par_file = $self->install_module($namespace);
+  }
+  elsif ($self->{auto_upgrade}) {
+    $local_par_file = $self->upgrade_module($namespace);
+  }
+  else {
+    $local_par_file = $self->_fetch_module($namespace);
     return() if not defined $local_par_file;
-        
-    return $local_par_file;
+
+    require PAR;
+    PAR->import( { file => $local_par_file, fallback => ($fallback?1:0) } );
+  }
+  return() if not defined $local_par_file;
+
+  return $local_par_file;
 }
 
 sub _fetch_module {
-    my $self = shift;
-    my $namespace = shift;
-    
-    $self->{error} = undef;
+  my $self = shift;
+  my $namespace = shift;
 
-    my ($modh) = $self->modules_dbm;
-    if (not defined $modh) {
-        return();
-    }
+  $self->{error} = undef;
 
-    my $dists = $modh->{$namespace};
-    if (not defined $dists) {
-        $self->{error} = "Could not find module '$namespace' in the repository.";
-        return();
-    }
+  my ($modh) = $self->modules_dbm;
+  if (not defined $modh) {
+    return();
+  }
 
-    my $dist = $self->prefered_distribution($namespace, $dists);
-    if (not defined $dist) {
-        $self->{error} = "PAR: Could not find a distribution for package '$namespace'";
-        return();
-    }
+  my $dists = $modh->{$namespace};
+  if (not defined $dists) {
+    $self->{error} = "Could not find module '$namespace' in the repository.";
+    return();
+  }
 
-    my $local_par_file = $self->fetch_par($dist);
-    if (not defined $local_par_file or not -f $local_par_file) {
-        return();
-    }
+  my $dist = $self->prefered_distribution($namespace, $dists);
+  if (not defined $dist) {
+    $self->{error} = "PAR: Could not find a distribution for package '$namespace'";
+    return();
+  }
 
-    return $local_par_file;
+  my $local_par_file = $self->fetch_par($dist);
+  if (not defined $local_par_file or not -f $local_par_file) {
+    return();
+  }
+
+  return $local_par_file;
 }
 
 =head2 install_module
@@ -338,20 +352,20 @@ the empty list on failure.
 =cut
 
 sub install_module {
-    my $self = shift;
-    my $namespace = shift;
-    
-    $self->{error} = undef;
-    
-    my $local_par_file = $self->_fetch_module($namespace);
-    return() if not defined $local_par_file;
-    
-    PAR::Dist::install_par(
-        %{$self->installation_targets()},
-        dist => $local_par_file,
-    ) or return ();
-    
-    return $local_par_file;
+  my $self = shift;
+  my $namespace = shift;
+
+  $self->{error} = undef;
+
+  my $local_par_file = $self->_fetch_module($namespace);
+  return() if not defined $local_par_file;
+
+  PAR::Dist::install_par(
+    %{$self->installation_targets()},
+    dist => $local_par_file,
+  ) or return ();
+
+  return $local_par_file;
 }
 
 
@@ -377,54 +391,54 @@ already current.
 =cut
 
 sub upgrade_module {
-    my $self = shift;
-    my $namespace = shift;
-    
-    $self->{error} = undef;
-    
-    # get local version
-    my $local_version;
-    eval "require $namespace; \$local_version = ${namespace}->VERSION;";
-    
-    # no local version found. Install from repo
-    if (not defined $local_version) {
-        my $mod = $namespace;
-        $mod =~ s/::/\//;
-        $mod .= '.pm';
-        delete $INC{$mod};
-        return $self->install_module($namespace);
-    }
-    
-    # The following code is all for determining the newest
-    # version in the repository.
-    my ($modh) = $self->modules_dbm;
-    if (not defined $modh) {
-        return();
-    }
+  my $self = shift;
+  my $namespace = shift;
 
-    my $dists = $modh->{$namespace};
-    if (not defined $dists) {
-        $self->{error} = "Could not find module '$namespace' in the repository.";
-        return();
-    }
+  $self->{error} = undef;
 
-    my $dist = $self->prefered_distribution($namespace, $dists);
-    if (not defined $dist) {
-        $self->{error} = "PAR: Could not find a distribution for package '$namespace'";
-        return();
-    }
+  # get local version
+  my $local_version;
+  eval "require $namespace; \$local_version = ${namespace}->VERSION;";
 
-    my $repo_version = $modh->{$namespace}{$dist};
+  # no local version found. Install from repo
+  if (not defined $local_version) {
+    my $mod = $namespace;
+    $mod =~ s/::/\//;
+    $mod .= '.pm';
+    delete $INC{$mod};
+    return $self->install_module($namespace);
+  }
 
-    if ($repo_version > $local_version) {
-        my $mod = $namespace;
-        $mod =~ s/::/\//;
-        $mod .= '.pm';
-        delete $INC{$mod};
-        return $self->install_module($namespace);
-    }
-    
+  # The following code is all for determining the newest
+  # version in the repository.
+  my ($modh) = $self->modules_dbm;
+  if (not defined $modh) {
     return();
+  }
+
+  my $dists = $modh->{$namespace};
+  if (not defined $dists) {
+    $self->{error} = "Could not find module '$namespace' in the repository.";
+    return();
+  }
+
+  my $dist = $self->prefered_distribution($namespace, $dists);
+  if (not defined $dist) {
+    $self->{error} = "PAR: Could not find a distribution for package '$namespace'";
+    return();
+  }
+
+  my $repo_version = $modh->{$namespace}{$dist};
+
+  if ($repo_version > $local_version) {
+    my $mod = $namespace;
+    $mod =~ s/::/\//;
+    $mod .= '.pm';
+    delete $INC{$mod};
+    return $self->install_module($namespace);
+  }
+
+  return();
 }
 
 
@@ -448,50 +462,51 @@ scripts. This differs from the behaviour for mdoules.
 
 
 sub run_script {
-    my $self = shift;
-    my $script = shift;
-    
-    $self->{error} = undef;
+  my $self = shift;
+  my $script = shift;
 
-    my ($scrh) = $self->scripts_dbm;
-    if (not defined $scrh) {
-        return();
-    }
+  $self->{error} = undef;
 
-    my $dists = $scrh->{$script};
-    if (not defined $dists) {
-        $self->{error} = "Could not find script '$script' in the repository.";
-        return();
-    }
-    my $dist = $self->prefered_distribution($script, $dists);
-    if (not defined $dist) {
-        $self->{error} = "PAR: Could not find a distribution for script '$script'";
-        return();
-    }
+  my ($scrh) = $self->scripts_dbm;
+  if (not defined $scrh) {
+    return();
+  }
 
-    my $local_par_file = $self->fetch_par($dist);
-    if (not defined $local_par_file or not -f $local_par_file) {
-        return();
-    }
-    
-    if ($self->{auto_install}) {
-        PAR::Dist::install_par(
-            %{ $self->installation_targets() },
-            dist => $local_par_file,
+  my $dists = $scrh->{$script};
+  if (not defined $dists) {
+    $self->{error} = "Could not find script '$script' in the repository.";
+    return();
+  }
+  my $dist = $self->prefered_distribution($script, $dists);
+  if (not defined $dist) {
+    $self->{error} = "PAR: Could not find a distribution for script '$script'";
+    return();
+  }
+
+  my $local_par_file = $self->fetch_par($dist);
+  if (not defined $local_par_file or not -f $local_par_file) {
+    return();
+  }
+
+  if ($self->{auto_install}) {
+    PAR::Dist::install_par(
+        %{ $self->installation_targets() },
+        dist => $local_par_file,
         ) or return ();
-    }
-    elsif ($self->{auto_upgrade}) {
-        # FIXME This is not the right way to do it!
-        PAR::Dist::install_par(
-            %{ $self->installation_targets() },
-            dist => $local_par_file,
+  }
+  elsif ($self->{auto_upgrade}) {
+    # FIXME This is not the right way to do it!
+    PAR::Dist::install_par(
+        %{ $self->installation_targets() },
+        dist => $local_par_file,
         ) or return ();
-    }
-    
-    PAR->import( { file => $local_par_file, run => $script } );
-    
-    # doesn't happen!?
-    return 1;
+  }
+  
+  require PAR;
+  PAR->import( { file => $local_par_file, run => $script } );
+
+  # doesn't happen!?
+  return 1;
 }
 
 
@@ -514,15 +529,15 @@ Returns a hash reference to a hash containing the installation targets.
 =cut
 
 sub installation_targets {
-    my $self = shift;
-    if (not @_) {
-        return {%{$self->{installation_targets}}};
-    }
-    
-    my %args = @_;
-
-    $self->{installation_targets} = \%args;
+  my $self = shift;
+  if (not @_) {
     return {%{$self->{installation_targets}}};
+  }
+    
+  my %args = @_;
+
+  $self->{installation_targets} = \%args;
+  return {%{$self->{installation_targets}}};
 }
 
 
@@ -535,9 +550,9 @@ the empty list otherwise.
 
 
 sub error {
-    my $self = shift;
-    my $err = $self->{error};
-    return(defined($err) ? $err : ());
+  my $self = shift;
+  my $err = $self->{error};
+  return(defined($err) ? $err : ());
 }
 
 =head1 OTHER METHODS
@@ -567,49 +582,50 @@ you would only get version C<0.128>.
 =cut
 
 sub prefered_distribution {
-    my $self = shift;
-    $self->{error} = undef;
-    my $ns = shift;
-    my $dists = shift;
+  my $self = shift;
+  $self->{error} = undef;
+  my $ns = shift;
+  my $dists = shift;
 
-    return() if not keys %$dists;
-    
-    my $this_pver = $Config::Config{version};
-    my $this_arch = $Config::Config{archname};
+  # potentially faster not to query the db here and rely
+  # on the while/each
+  #return() if not keys %$dists;
 
-    my @sorted;
-    foreach my $dist (keys %$dists) {
-        # distfile, version, distname, distver, arch, pver
-        my $ver = version->new($dists->{$dist}||0);
-        my ($n, $v, $a, $p) = PAR::Dist::parse_dist_name($dist);
-        next if not defined $a or not defined $p;
-        # skip the ones for other archs
-        next if $a ne $this_arch and $a ne 'any_arch';
-        next if $p ne $this_pver and $p ne 'any_version';
-        
-        # as a fallback while sorting, prefer arch and pver
-        # specific dists to fallbacks
-        my $order_num =
-            ($a eq 'any_arch' ? 2 : 0)
-            + ($p eq 'any_version' ? 1 : 0);
-        push @sorted, [$dist, $ver, $order_num];
+  my $this_pver = $Config::Config{version};
+  my $this_arch = $Config::Config{archname};
+
+  my @sorted;
+  while (my ($dist, $ver) = each(%$dists)) {
+    # distfile, version, distname, distver, arch, pver
+    my $version = version->new($ver||0);
+    my ($n, $v, $a, $p) = PAR::Dist::parse_dist_name($dist);
+    next if not defined $a or not defined $p;
+    # skip the ones for other archs
+    next if $a ne $this_arch and $a ne 'any_arch';
+    next if $p ne $this_pver and $p ne 'any_version';
+
+    # as a fallback while sorting, prefer arch and pver
+    # specific dists to fallbacks
+    my $order_num =
+      ($a eq 'any_arch' ? 2 : 0)
+      + ($p eq 'any_version' ? 1 : 0);
+    push @sorted, [$dist, $version, $order_num];
+  }
+  return() if not @sorted;
+
+  # sort by version, highest first.
+  @sorted =
+    sort {
+      # sort version
+      $b->[1] <=> $a->[1]
+      or
+      # specific before any_version before any_arch before any_*
+      $a->[2] <=> $b->[2]
     }
-    return() if not @sorted;
-    
-    # sort by version, highest first.
-    @sorted =
-        sort {
-            # sort version
-            $b->[1] <=> $a->[1]
-                or
-            # specific before any_version before any_arch before any_*
-            $a->[2] <=> $b->[2]
-        }
-        @sorted;
+  @sorted;
 
-    
-    my $dist = shift @sorted;
-    return $dist->[0];
+  my $dist = shift @sorted;
+  return $dist->[0];
 }
 
 =head2 validate_repository_version
@@ -623,35 +639,113 @@ Returns a boolean indicating the outcome of the operation.
 =cut
 
 sub validate_repository_version {
-    my $self = shift;
-    $self->{error} = undef;
+  my $self = shift;
+  $self->{error} = undef;
 
-    my $info = $self->_repository_info;
-    if (not defined $info) {
-        return();
-    }
-    elsif (not exists $info->[0]{repository_version}) {
-        $self->{error} = "Repository info file ('repository_info.yml') does not contain a version.";
-        return();
-    }
-    
-    # check for compatibility
-    my $repo_version = $info->[0]{repository_version};
-    
-    my $main_repo_version = $repo_version;
-    $main_repo_version =~ s/^(\d+\.\d).*$/$1/;
-    
-    if (
-        not exists
-        $PAR::Repository::Client::Compatible_Versions->{
-            $main_repo_version
-        }
-    ) {
-        $self->{error} = "Repository has an incompatible version (".$info->[0]{repository_version}.")";
-        return();
-    }
-    return 1;
+  my $info = $self->_repository_info;
+  if (not defined $info) {
+    return();
+  }
+  elsif (not exists $info->[0]{repository_version}) {
+    $self->{error} = "Repository info file ('repository_info.yml') does not contain a version.";
+    return();
+  }
+
+  # check for compatibility
+  my $repo_version = $info->[0]{repository_version};
+
+  my $main_repo_version = $repo_version;
+  $main_repo_version =~ s/^(\d+\.\d).*$/$1/;
+
+  if ( not exists $PAR::Repository::Client::Compatible_Versions->{$main_repo_version} ) {
+    $self->{error} = "Repository has an incompatible version (".$info->[0]{repository_version}.")";
+    return();
+  }
+  return 1;
 }
+
+=head2 need_dbm_update
+
+Takes one or no arguments. Without arguments, all DBM files are
+checked. With an argument, only the specified DBM file will be checked.
+
+Returns true if either one of the following conditions match:
+
+=over 2
+
+=item
+
+The repository does not support checksums.
+
+=item
+
+The checksums (and thus also the DBM files) haven't been
+downloaded yet.
+
+=item
+
+The local copies of the checksums do not match those of the repository.
+
+=back
+
+In cases two and three above, the return value is actually the hash
+reference of checksums that was fetched from the repository.
+
+Returns the empty list if the local checksums match those of the
+repository exactly.
+
+You don't usually need to call this directly. By default, DBM files
+are only fetched from the repository if necessary.
+
+=cut
+
+sub need_dbm_update {
+  my $self = shift;
+  $self->{error} = undef;
+
+  my $check_file = shift;
+  $check_file .= '.zip' if defined $check_file and not $check_file =~ /\.zip$/;
+
+  my $support = $self->{supports_checksums};
+  if (defined $support and not $support) {
+    return 1;
+  }
+
+  my $checksums = $self->_dbm_checksums();
+
+  if (not defined $checksums) {
+    $self->{supports_checksums} = 0;
+    return 1;
+  }
+  else {
+    $self->{supports_checksums} = 1;
+  }
+
+  if (not defined $self->{checksums}) {
+    # never fetched checksums before.
+    return $checksums;
+  }
+  else {
+    # we fetched checksums earlier, match them
+    my $local_checksums = $self->{checksums};
+    if (not defined $check_file) {
+      return $checksums if keys(%$local_checksums) != keys(%$checksums);
+      foreach my $file (keys %$checksums) {
+        return $checksums
+          if not exists $local_checksums->{$file}
+          or not $local_checksums->{$file} eq $checksums->{$file};
+      }
+    }
+    else {
+      return $checksums
+        if not exists $local_checksums->{$check_file}
+        or not exists $checksums->{$check_file}
+        or not $local_checksums->{$check_file} eq $checksums->{$check_file};
+    }
+    return 0;
+  }
+}
+
 
 =head2 modules_dbm
 
@@ -669,38 +763,64 @@ implemented in a subclass such as L<PAR::Repository::Client::HTTP>.
 =cut
 
 sub modules_dbm {
-    my $self = shift;
-    $self->{error} = undef;
-    
-    $self->close_modules_dbm;
-    
-    my $file = $self->_fetch_dbm_file(MODULES_DBM_FILE().".zip");
-    # (error set by _fetch_dbm_file)
-    return() if not defined $file; # or not -f $file; # <--- _fetch_dbm_file should do the stat!
-    
-    my ($tempfh, $tempfile) = File::Temp::tempfile(
-		'temporary_dbm_XXXXX',
-		UNLINK => 0,
-		DIR => File::Spec->tmpdir(),
-	);
-    
-	if (not $self->_unzip_file($file, $tempfile, MODULES_DBM_FILE())) {
-        $self->{error} = "Could not unzip dbm file '$file' to '$tempfile'";
-        return();
+  my $self = shift;
+  $self->{error} = undef;
+
+  my $checksums = $self->need_dbm_update();
+  if ($self->{modules_dbm_hash}) {
+    # need new dbm file?
+    return $self->{modules_dbm_hash} if not $checksums;
+
+    # does this particular dbm need to be updated?
+    if ($self->{checksums}) {
+      my $local_checksum = $self->{checksums}{MODULES_DBM_FILE().".zip"};
+      my $remote_checksum = $checksums->{MODULES_DBM_FILE().".zip"};
+      return $self->{modules_dbm_hash}
+        if defined $local_checksum and defined $remote_checksum
+           and $local_checksum eq $remote_checksum;
     }
 
-    unlink $file;
-    
-    $self->{modules_dbm_temp_file} = $tempfile;
+    # just to make sure
+    $self->close_modules_dbm;
+  }
 
-	my %hash;
-    my $obj = tie %hash, "DBM::Deep", {
-		file => $tempfile,
-		locking => 1,
-	}; 
+  my $file = $self->_fetch_dbm_file(MODULES_DBM_FILE().".zip");
+  # (error set by _fetch_dbm_file)
+  return() if not defined $file; # or not -f $file; # <--- _fetch_dbm_file should do the stat!
 
-    $self->{modules_dbm_hash} = \%hash;
-	return (\%hash, $tempfile);
+  my ($tempfh, $tempfile) = File::Temp::tempfile(
+    'temporary_dbm_XXXXX',
+    UNLINK => 0,
+    DIR => File::Spec->tmpdir(),
+  );
+
+  if (not $self->_unzip_file($file, $tempfile, MODULES_DBM_FILE())) {
+    $self->{error} = "Could not unzip dbm file '$file' to '$tempfile'";
+    return();
+  }
+
+  unlink $file;
+
+  $self->{modules_dbm_temp_file} = $tempfile;
+
+  my %hash;
+  my $obj = tie %hash, "DBM::Deep", {
+    file => $tempfile,
+    locking => 1,
+    autoflush => 0,
+  }; 
+
+  $self->{modules_dbm_hash} = \%hash;
+
+  # save this dbm file checksum
+  if (ref($checksums)) {
+    if (not $self->{checksums}) {
+      $self->{checksums} = {};
+    }
+    $self->{checksums}{MODULES_DBM_FILE().".zip"} = $checksums->{MODULES_DBM_FILE().".zip"};
+  }
+
+  return (\%hash, $tempfile);
 }
 
 =head2 scripts_dbm
@@ -719,40 +839,65 @@ implemented in a subclass such as L<PAR::Repository::Client::HTTP>.
 =cut
 
 sub scripts_dbm {
-    my $self = shift;
-    $self->{error} = undef;
-    
-    $self->close_scripts_dbm;
-    
-    my $file = $self->_fetch_dbm_file(SCRIPTS_DBM_FILE().".zip");
-    # (error set by _fetch_dbm_file)
-    return() if not defined $file; # or not -f $file; # <--- _fetch_dbm_file should do the stat!
-    
-    my ($tempfh, $tempfile) = File::Temp::tempfile(
-		'temporary_dbm_XXXXX',
-		UNLINK => 0,
-		DIR => File::Spec->tmpdir(),
-	);
-    
-	if (not $self->_unzip_file($file, $tempfile, SCRIPTS_DBM_FILE())) {
-        $self->{error} = "Could not unzip dbm file '$file' to '$tempfile'";
-        return();
+  my $self = shift;
+  $self->{error} = undef;
+
+  my $checksums = $self->need_dbm_update();
+  if ($self->{scripts_dbm_hash}) {
+    # need new dbm file?
+    return $self->{scripts_dbm_hash} if not $checksums;
+
+    # does this particular dbm need to be updated?
+    if ($self->{checksums}) {
+      my $local_checksum = $self->{checksums}{SCRIPTS_DBM_FILE().".zip"};
+      my $remote_checksum = $checksums->{SCRIPTS_DBM_FILE().".zip"};
+      return $self->{scripts_dbm_hash}
+        if defined $local_checksum and defined $remote_checksum
+           and $local_checksum eq $remote_checksum;
     }
 
-    unlink $file;
-    
-    $self->{scripts_dbm_temp_file} = $tempfile;
+    # just to make sure
+    $self->close_scripts_dbm;
+  }
 
-	my %hash;
-    my $obj = tie %hash, "DBM::Deep", {
-		file => $tempfile,
-		locking => 1,
-	}; 
+  my $file = $self->_fetch_dbm_file(SCRIPTS_DBM_FILE().".zip");
+  # (error set by _fetch_dbm_file)
+  return() if not defined $file; # or not -f $file; # <--- _fetch_dbm_file should do the stat!
 
-    $self->{scripts_dbm_hash} = \%hash;
-	return (\%hash, $tempfile);
+  my ($tempfh, $tempfile) = File::Temp::tempfile(
+    'temporary_dbm_XXXXX',
+    UNLINK => 0,
+    DIR => File::Spec->tmpdir(),
+  );
+
+  if (not $self->_unzip_file($file, $tempfile, SCRIPTS_DBM_FILE())) {
+    $self->{error} = "Could not unzip dbm file '$file' to '$tempfile'";
+    return();
+  }
+
+  unlink $file;
+
+  $self->{scripts_dbm_temp_file} = $tempfile;
+
+  my %hash;
+  my $obj = tie %hash, "DBM::Deep", {
+    file => $tempfile,
+    locking => 1,
+    autoflush => 0,
+  }; 
+
+  $self->{scripts_dbm_hash} = \%hash;
+
+  # save this dbm file checksum
+  if (ref($checksums)) {
+    if (not $self->{checksums}) {
+      $self->{checksums} = {};
+    }
+    $self->{checksums}{SCRIPTS_DBM_FILE().".zip"} = $checksums->{SCRIPTS_DBM_FILE().".zip"};
+  }
+
+  return (\%hash, $tempfile);
 }
-
 
 
 =head2 close_modules_dbm
@@ -765,19 +910,22 @@ This is called when the object is destroyed.
 =cut
 
 sub close_modules_dbm {
-	my $self = shift;
-	my $hash = $self->{modules_dbm_hash};
-	return if not defined $hash;
+  my $self = shift;
+  my $hash = $self->{modules_dbm_hash};
+  return if not defined $hash;
 
-	my $obj = tied($hash);
-	$self->{modules_dbm_hash} = undef;
-	undef $hash;
-	undef $obj;
-	
-	unlink $self->{modules_dbm_temp_file};
-	$self->{modules_dbm_temp_file} = undef;
+  my $obj = tied($hash);
+  $self->{modules_dbm_hash} = undef;
+  undef $hash;
+  undef $obj;
 
-	return 1;
+  unlink $self->{modules_dbm_temp_file};
+  $self->{modules_dbm_temp_file} = undef;
+  if ($self->{checksums}) {
+    delete $self->{checksums}{MODULES_DBM_FILE().".zip"};
+  }
+
+  return 1;
 }
 
 =head2 close_scripts_dbm
@@ -790,62 +938,35 @@ This is called when the object is destroyed.
 =cut
 
 sub close_scripts_dbm {
-	my $self = shift;
-	my $hash = $self->{scripts_dbm_hash};
-	return if not defined $hash;
+  my $self = shift;
+  my $hash = $self->{scripts_dbm_hash};
+  return if not defined $hash;
 
-	my $obj = tied($hash);
-	$self->{scripts_dbm_hash} = undef;
-	undef $hash;
-	undef $obj;
-	
-	unlink $self->{scripts_dbm_temp_file};
-	$self->{scripts_dbm_temp_file} = undef;
+  my $obj = tied($hash);
+  $self->{scripts_dbm_hash} = undef;
+  undef $hash;
+  undef $obj;
 
-	return 1;
+  unlink $self->{scripts_dbm_temp_file};
+  $self->{scripts_dbm_temp_file} = undef;
+  if ($self->{checksums}) {
+    delete $self->{checksums}{SCRIPTS_DBM_FILE().".zip"};
+  }
+
+  return 1;
 }
 
 =head1 PRIVATE METHODS
 
 These private methods should not be relied upon from the outside of
-the module.
-
-=head2 _unzip_file
-
-This is a private method. Callable as class or instance method.
-
-Unzips the file given as first argument to the file
-given as second argument.
-If a third argument is used, the zip member of that name
-is extracted. If the zip member name is omitted, it is
-set to the target file name.
-
-Returns the name of the unzipped file.
+the module. (See also: L<PAR::Repository::Client::Util>)
 
 =cut
 
-sub _unzip_file {
-	my $class = shift;
-	my $file = shift;
-	my $target = shift;
-	my $member = shift;
-	$member = $target if not defined $member;
-	return unless -f $file;
-
-    my $zip = Archive::Zip->new;
-	local %SIG;
-	$SIG{__WARN__} = sub { print STDERR $_[0] unless $_[0] =~ /\bstat\b/ };
-	
-    return unless $zip->read($file) == Archive::Zip::AZ_OK()
-           and $zip->extractMember($member, $target) == Archive::Zip::AZ_OK();
-
-	return $target;
-}
-
 sub DESTROY {
-    my $self = shift;
-    $self->close_modules_dbm;
-    $self->close_scripts_dbm;
+  my $self = shift;
+  $self->close_modules_dbm;
+  $self->close_scripts_dbm;
 }
 
 1;
@@ -873,7 +994,7 @@ Steffen Mueller, E<lt>smueller@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2006-2007 by Steffen Mueller
+Copyright 2006-2008 by Steffen Mueller
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.6 or,

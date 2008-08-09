@@ -9,7 +9,7 @@ use base 'PAR::Repository::Client';
 use Carp qw/croak/;
 require File::Copy;
 
-our $VERSION = '0.16';
+our $VERSION = '0.17';
 
 =head1 NAME
 
@@ -54,30 +54,30 @@ First argument must be the distribution name to fetch.
 =cut
 
 sub fetch_par {
-    my $self = shift;
-    $self->{error} = undef;
-    my $dist = shift;
-    if (not defined $dist) {
-        $self->{error} = "undef passed as argument to fetch_par()";
-        return();
-    }
-    
-    my $path = $self->{uri};
-    $path =~ s/(?:\/|\\)$//;
-    $path =~ s!^file://!!i;
-    
-    my ($n, $v, $a, $p) = PAR::Dist::parse_dist_name($dist);
-    my $file = File::Spec->catfile(
-        File::Spec->catdir($path, $a, $p),
-        "$n-$v-$a-$p.par"
-    );
+  my $self = shift;
+  $self->{error} = undef;
+  my $dist = shift;
+  if (not defined $dist) {
+    $self->{error} = "undef passed as argument to fetch_par()";
+    return();
+  }
 
-    if (not -f $file) {
-        $self->{error} = "Could not find distribution in local repository at '$file'";
-        return();
-    }
+  my $path = $self->{uri};
+  $path =~ s/(?:\/|\\)$//;
+  $path =~ s!^file://!!i;
 
-    return $file;
+  my ($n, $v, $a, $p) = PAR::Dist::parse_dist_name($dist);
+  my $file = File::Spec->catfile(
+    File::Spec->catdir($path, $a, $p),
+    "$n-$v-$a-$p.par"
+  );
+
+  if (not -f $file) {
+    $self->{error} = "Could not find distribution in local repository at '$file'";
+    return();
+  }
+
+  return $file;
 }
 
 =head2 validate_repository
@@ -93,15 +93,15 @@ failure.
 =cut
 
 sub validate_repository {
-    my $self = shift;
-    $self->{error} = undef;
+  my $self = shift;
+  $self->{error} = undef;
 
-    my $mod_db = $self->modules_dbm;
-    return() unless defined $mod_db;
-    
-    return() unless $self->validate_repository_version;
-    
-    return 1;
+  my $mod_db = $self->modules_dbm;
+  return() unless defined $mod_db;
+
+  return() unless $self->validate_repository_version;
+
+  return 1;
 }
 
 =head2 _repository_info
@@ -114,32 +114,32 @@ This is a private method.
 =cut
 
 sub _repository_info {
-    my $self = shift;
-    $self->{error} = undef;
-    return $self->{info} if defined $self->{info};
+  my $self = shift;
+  $self->{error} = undef;
+  return $self->{info} if defined $self->{info};
 
-    my $path = $self->{uri};
-    $path =~ s/(?:\/|\\)$//;
-    $path =~ s!^file://!!i;
-    
-    my $file = File::Spec->catfile($path, PAR::Repository::Client::REPOSITORY_INFO_FILE());
-    
-    if (not defined $file or not -f $file) {
-        $self->{error} = "File '$file' does not exist in repository.";
-        return();
-    }
+  my $path = $self->{uri};
+  $path =~ s/(?:\/|\\)$//;
+  $path =~ s!^file://!!i;
 
-    my $yaml = YAML::Tiny->new->read($file);
-    if (not defined $yaml) {
-        $self->{error} = "Error reading repository info from YAML file.";
-        return();
-    }
-    
-    # workaround for possible YAML::Syck/YAML::Tiny bug
-    # This is not the right way to do it!
-    @$yaml = ($yaml->[1]) if @$yaml > 1;
-    $self->{info} = $yaml;
-    return $yaml;
+  my $file = File::Spec->catfile($path, PAR::Repository::Client::REPOSITORY_INFO_FILE());
+
+  if (not defined $file or not -f $file) {
+    $self->{error} = "File '$file' does not exist in repository.";
+    return();
+  }
+
+  my $yaml = YAML::Tiny->new->read($file);
+  if (not defined $yaml) {
+    $self->{error} = "Error reading repository info from YAML file.";
+    return();
+  }
+
+  # workaround for possible YAML::Syck/YAML::Tiny bug
+  # This is not the right way to do it!
+  @$yaml = ($yaml->[1]) if @$yaml > 1;
+  $self->{info} = $yaml;
+  return $yaml;
 }
 
 =head2 _fetch_dbm_file
@@ -156,31 +156,71 @@ method in case of failure.
 =cut
 
 sub _fetch_dbm_file {
-    my $self = shift;
-    $self->{error} = undef;
-    my $file = shift;
-    return if not defined $file;
-    
-    my $path = $self->{uri};
-    $path =~ s/(?:\/|\\)$//;
-    $path =~ s!^file://!!i;
-    
-    my $url = File::Spec->catfile( $path, $file );
+  my $self = shift;
+  $self->{error} = undef;
+  my $file = shift;
+  return if not defined $file;
 
-    if (not -f $url) {
-        $self->{error} = "Could not find dbm file in local repository at '$url'";
-        return();
-    }
-    
-    my ($tempfh, $tempfile) = File::Temp::tempfile(
-		'temporary_zip_dbm_XXXXX',
-		UNLINK => 0,
-		DIR => File::Spec->tmpdir(),
-	);
+  my $path = $self->{uri};
+  $path =~ s/(?:\/|\\)$//;
+  $path =~ s!^file://!!i;
 
-    File::Copy::copy($url, $tempfile);
-    
-    return $tempfile;
+  my $url = File::Spec->catfile( $path, $file );
+
+  if (not -f $url) {
+    $self->{error} = "Could not find dbm file in local repository at '$url'";
+    return();
+  }
+
+  my ($tempfh, $tempfile) = File::Temp::tempfile(
+    'temporary_zip_dbm_XXXXX',
+    UNLINK => 0,
+    DIR => File::Spec->tmpdir(),
+  );
+
+  File::Copy::copy($url, $tempfile);
+
+  return $tempfile;
+}
+
+
+
+=head2 _dbm_checksums
+
+This is a private method.
+
+If the repository has a checksums file (new feature of
+C<PAR::Repository> 0.15), this method returns a hash  
+associating the DBM file names (e.g. C<foo_bar.dbm.zip>)
+with their MD5 hashes (base 64).
+
+This method B<always> queries the repository and never caches
+the information locally. That's the whole point of having the
+checksums.
+
+In case the repository does not have checksums, this method
+returns the empty list, so check the return value!
+The error message (see the C<error()> method) will be
+I<"Repository does not support checksums"> in that case.
+
+=cut
+
+sub _dbm_checksums {
+  my $self = shift;
+  $self->{error} = undef;
+
+  my $path = $self->{uri};
+  $path =~ s/(?:\/|\\)$//;
+  $path =~ s!^file://!!i;
+
+  my $file = File::Spec->catfile($path, PAR::Repository::Client::DBM_CHECKSUMS_FILE());
+
+  if (not defined $file or not -f $file) {
+    $self->{error} = "Repository does not support checksums";
+    return();
+  }
+
+  return $self->_parse_dbm_checksums($file);
 }
 
 
@@ -196,9 +236,9 @@ Should return a true value on success.
 =cut
 
 sub _init {
-    # We implement additional object attributes here
-    # Currently no extra attributes...
-    return 1;
+  # We implement additional object attributes here
+  # Currently no extra attributes...
+  return 1;
 }
 
 
@@ -225,7 +265,7 @@ Steffen Mueller, E<lt>smueller@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2006-2007 by Steffen Mueller
+Copyright 2006-2008 by Steffen Mueller
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.6 or,
