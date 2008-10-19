@@ -33,7 +33,10 @@ my @tests = (
     'Math-Symbolic-0.502-any_arch-5.8.7.par',
 );
 
-my $obj = bless {} => 'PAR::Repository::Client';
+my $obj = bless {
+  perl_version => $Config::Config{version},
+  architecture => $Config::Config{archname},
+} => 'PAR::Repository::Client';
 while (@tests) {
 	my $ns = shift @tests;
 	my $h  = shift @tests;

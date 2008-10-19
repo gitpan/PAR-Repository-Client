@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:                PAR-Repository-Client
-version:             0.19_01
+version:             0.20
 abstract:            Access PAR repositories
 license:             perl
 author:              

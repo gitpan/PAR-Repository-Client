@@ -1,6 +1,6 @@
 Revision history for Perl extension PAR::Repository::Client.
 
-0.19_01  Sat Aug 10 00:06 2008
+0.20  Sat Aug 10 00:06 2008
     - Require PAR 0.982: 
     --> Only load PAR.pm when really needed, otherwise load just
         the new PAR::Setup* modules to setup the environment.

@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.19_01';
+our $VERSION = '0.20';
 
 # list compatible repository versions
 # This is a list of numbers of the form "\d+.\d".
@@ -129,6 +129,13 @@ you will get a fatal error.
 In order to control where the modules are installed to, you can
 use the C<installation_targets> method.
 
+The optional C<architecture> and C<perl_version> parameters
+can be used to specify the architecture and perl version that are
+used to choose the right PAR archives from the repository.
+Defaults to your running perl, so
+please read the comments on C<architecture> and C<perl_version>
+below before blindly using this.
+
 Upon client creation, the repository's version is validated to be
 compatible with this version of the client.
 
@@ -178,6 +185,8 @@ sub new {
     auto_install => $args{auto_install},
     auto_upgrade => $args{auto_upgrade},
     installation_targets => {}, # see PAR::Dist
+    perl_version => (defined($args{perl_version}) ? $args{perl_version} : $Config::Config{version}),
+    architecture => (defined($args{architecture}) ? $args{architecture} : $Config::Config{archname}),
   } => "PAR::Repository::Client::$obj_class";
 
   $self->_init(\%args);
@@ -555,6 +564,50 @@ sub error {
   return(defined($err) ? $err : ());
 }
 
+=head1 ACCESSORS
+
+These methods get or set some attributes of the repository client.
+
+=head2 perl_version
+
+Sets and/or returns the perl version which is used to choose the right
+C<.par> packages from the repository. Defaults to the currently running
+perl version (from C<%Config>).
+
+You'd better know what you're doing if you plan to set this to something
+you're not actually running. One valid use is if you use the
+C<installation_targets> possibly in conjunction with
+L<ExtUtils::InferConfig> to install into a different perl than the
+one that's running!
+
+=cut
+
+sub perl_version {
+  my $self = shift;
+  $self->{perl_version} = shift @_ if @_;
+  return $self->{perl_version};
+}
+
+=head2 architecture 
+
+Sets and/or returns the name of the architecture which is used to choose the right
+C<.par> packages from the repository. Defaults to the currently running
+architecture (from C<%Config>).
+
+You'd better know what you're doing if you plan to set this to something
+you're not actually running. One valid use is if you use the
+C<installation_targets> possibly in conjunction with
+L<ExtUtils::InferConfig> to install into a different perl than the
+one that's running!
+
+=cut
+
+sub architecture {
+  my $self = shift;
+  $self->{architecture} = shift @_ if @_;
+  return $self->{architecture};
+}
+
 =head1 OTHER METHODS
 
 These methods, while part of the official interface, should need rarely be
@@ -591,8 +644,8 @@ sub prefered_distribution {
   # on the while/each
   #return() if not keys %$dists;
 
-  my $this_pver = $Config::Config{version};
-  my $this_arch = $Config::Config{archname};
+  my $this_pver = $self->perl_version;
+  my $this_arch = $self->architecture;
 
   my @sorted;
   while (my ($dist, $ver) = each(%$dists)) {
