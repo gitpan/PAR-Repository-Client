@@ -1,9 +1,14 @@
 Revision history for Perl extension PAR::Repository::Client.
 
-0.20  Sat Aug 10 00:06 2008
+0.21  Mon Oct 20 20:49 2008
+    - Simple distribution fix. 0.20 was missing a file. Oops!
+
+0.20  Sun Oct 19 18:20 2008
     - Require PAR 0.982: 
     --> Only load PAR.pm when really needed, otherwise load just
         the new PAR::Setup* modules to setup the environment.
+    - Support for manually specifying the preferred architecture
+      and perl version.
 
 0.18  Tue Jun  3 15:29 2008
     - Don't refetch DBM files when deemed not necessary because the
