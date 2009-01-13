@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.21';
+our $VERSION = '0.21_01';
 
 # list compatible repository versions
 # This is a list of numbers of the form "\d+.\d".
@@ -29,7 +29,7 @@ require PAR::Repository::Client::HTTP;
 require PAR::Repository::Client::Local;
 
 use Carp qw/croak/;
-use File::Spec::Functions qw/splitpath/;
+use File::Spec;
 require version;
 require Config;
 require PAR::Dist;
@@ -258,7 +258,7 @@ sub use_module {
   my $required = $self->require_module($namespace);
   return() if not $required; # error set by require_module
 
-    eval "package $pkg; ${namespace}->import(\@args) if ${namespace}->can('import');";
+  eval "package $pkg; ${namespace}->import(\@args) if ${namespace}->can('import');";
   if ($@) {
     $self->{error} = "An error occurred while executing 'package $pkg; ${namespace}->import(\@args);'. Error: $@";
     return();
@@ -322,13 +322,12 @@ sub _fetch_module {
     return();
   }
 
-  my $dists = $modh->{$namespace};
-  if (not defined $dists) {
+  if (not exists $modh->{$namespace} or not defined $modh->{$namespace}) {
     $self->{error} = "Could not find module '$namespace' in the repository.";
     return();
   }
 
-  my $dist = $self->prefered_distribution($namespace, $dists);
+  my $dist = $self->prefered_distribution($namespace, $modh->{$namespace});
   if (not defined $dist) {
     $self->{error} = "PAR: Could not find a distribution for package '$namespace'";
     return();
@@ -397,6 +396,17 @@ Returns the name of the local F<.par> file which was installed or
 the empty list on failure or if the local version of the module is
 already current.
 
+I<CAVEAT:> This will first try to require a locally installed version
+of the module. If that succeeds, its version is compared to the
+highest version in the repository. If an upgrade is necessary,
+the new module will be installed. If the module hadn't been found
+locally before the installation, it will be loaded. If it was
+found locally (and thus loaded), C<IT WILL NOT BE RELOADED SO
+YOU GET THE NEW VERSION>.
+This is because reloading of modules is not a simple issue.
+If you need this behaviour, you can get it manually using L<Class::Unload>
+and another require.
+
 =cut
 
 sub upgrade_module {
@@ -408,6 +418,7 @@ sub upgrade_module {
   # get local version
   my $local_version;
   eval "require $namespace; \$local_version = ${namespace}->VERSION;";
+  $local_version = version->new($local_version) if not eval {$local_version->isa('version')};
 
   # no local version found. Install from repo
   if (not defined $local_version) {
@@ -438,6 +449,7 @@ sub upgrade_module {
   }
 
   my $repo_version = $modh->{$namespace}{$dist};
+  $repo_version = version->new($repo_version) if not eval {$repo_version->isa('version')};
 
   if ($repo_version > $local_version) {
     my $mod = $namespace;
@@ -774,7 +786,7 @@ sub need_dbm_update {
     $self->{supports_checksums} = 1;
   }
 
-  if (not defined $self->{checksums}) {
+  if (not defined $self->{checksums} or keys %{$self->{checksums}} == 0) {
     # never fetched checksums before.
     return $checksums;
   }
@@ -792,10 +804,10 @@ sub need_dbm_update {
     else {
       return $checksums
         if not exists $local_checksums->{$check_file}
-        or not exists $checksums->{$check_file}
+        or not exists $checksums->{$check_file} # shouldn't happen
         or not $local_checksums->{$check_file} eq $checksums->{$check_file};
     }
-    return 0;
+    return();
   }
 }
 
@@ -822,13 +834,14 @@ sub modules_dbm {
   my $checksums = $self->need_dbm_update();
   if ($self->{modules_dbm_hash}) {
     # need new dbm file?
-    return $self->{modules_dbm_hash} if not $checksums;
+    return($self->{modules_dbm_hash}, $self->{modules_dbm_temp_file})
+      if not $checksums;
 
     # does this particular dbm need to be updated?
     if ($self->{checksums}) {
       my $local_checksum = $self->{checksums}{MODULES_DBM_FILE().".zip"};
       my $remote_checksum = $checksums->{MODULES_DBM_FILE().".zip"};
-      return $self->{modules_dbm_hash}
+      return($self->{modules_dbm_hash}, $self->{modules_dbm_temp_file})
         if defined $local_checksum and defined $remote_checksum
            and $local_checksum eq $remote_checksum;
     }
@@ -898,13 +911,14 @@ sub scripts_dbm {
   my $checksums = $self->need_dbm_update();
   if ($self->{scripts_dbm_hash}) {
     # need new dbm file?
-    return $self->{scripts_dbm_hash} if not $checksums;
+    return($self->{scripts_dbm_hash}, $self->{scripts_dbm_temp_file})
+      if not $checksums;
 
     # does this particular dbm need to be updated?
     if ($self->{checksums}) {
       my $local_checksum = $self->{checksums}{SCRIPTS_DBM_FILE().".zip"};
       my $remote_checksum = $checksums->{SCRIPTS_DBM_FILE().".zip"};
-      return $self->{scripts_dbm_hash}
+      return($self->{scripts_dbm_hash}, $self->{scripts_dbm_temp_file})
         if defined $local_checksum and defined $remote_checksum
            and $local_checksum eq $remote_checksum;
     }

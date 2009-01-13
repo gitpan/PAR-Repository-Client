@@ -1,5 +1,17 @@
 Revision history for Perl extension PAR::Repository::Client.
 
+0.21_01  Tue Jan 13 18:00 2009
+    - Fix return values of modules_dbm and scripts_dbm:
+      Formerly, they would only return the hash (not the file)
+      if the checksums matched.
+    - Fix return value of need_dbm_update on success. Documented
+      to be the empty list, was 0.
+    - Fix need_dbm_update in case the checksums had never been
+      fetched before.
+    - Fix autovivification bug in _fetch_module(). (very minor)
+    - Fix bug in _fetch_module()
+    - Much, MUCH better tests.
+
 0.21  Mon Oct 20 20:49 2008
     - Simple distribution fix. 0.20 was missing a file. Oops!
 
