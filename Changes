@@ -1,5 +1,12 @@
 Revision history for Perl extension PAR::Repository::Client.
 
+0.21_02  Tue Jan 13 20:06 2009
+    - Support for setting custom cache directories with
+      the cache_dir parameter to new().
+    - Set PAR_TEMP to a real temporary directory with cleanup
+      for the tests so there are not files leftover after
+      testing (RT #30018)
+
 0.21_01  Tue Jan 13 18:00 2009
     - Fix return values of modules_dbm and scripts_dbm:
       Formerly, they would only return the hash (not the file)

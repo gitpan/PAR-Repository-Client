@@ -1,5 +1,9 @@
 use strict;
 use warnings;
+
+use File::Temp ();
+BEGIN { $ENV{PAR_TEMP} = File::Temp::tempdir( CLEANUP => 1 ); }
+
 use Config;
 
 BEGIN {eval "require Errno;"; };

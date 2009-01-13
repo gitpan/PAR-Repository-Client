@@ -12,7 +12,7 @@ use base 'PAR::Repository::Client';
 
 use Carp qw/croak/;
 
-our $VERSION = '0.17';
+our $VERSION = '0.21';
 
 =head1 NAME
 
@@ -90,18 +90,18 @@ sub fetch_par {
     $self->{error} = undef;
     my $file = shift;
 
-    $ENV{PAR_TEMP} ||= File::Spec->catdir(File::Spec->tmpdir, 'par');
-    mkdir $ENV{PAR_TEMP}, 0777;
+    my $cache_dir = $self->{cache_dir}; # used to be PAR_TEMP, but now configurable
     %escapes = map { chr($_) => sprintf("%%%02X", $_) } 0..255 unless %escapes;
 
     $file =~ m!/([^/]+)$!;
     my $local_file = (defined($1) ? $1 : $file);
     $local_file =~ s/([^\w\._])/$escapes{$1}/g;
-    $local_file = File::Spec->catfile( $ENV{PAR_TEMP}, $local_file);
+    $local_file = File::Spec->catfile( $self->{cache_dir}, $local_file );
 
     my $timeout = $self->{http_timeout};
     my $old_timeout = $ua->timeout();
     $ua->timeout($timeout) if defined $timeout;
+    my @s = LWP::Simple::head($file);
     my $rc = LWP::Simple::mirror( $file, $local_file );
     $ua->timeout($old_timeout) if defined $timeout;
     if (!LWP::Simple::is_success($rc) and not $rc == HTTP::Status::RC_NOT_MODIFIED()) {
@@ -110,7 +110,7 @@ sub fetch_par {
     }
 
     return $local_file if -f $local_file;
-    return;
+    return();
   }
 }
 
@@ -295,7 +295,7 @@ Steffen Mueller, E<lt>smueller@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2006-2008 by Steffen Mueller
+Copyright (C) 2006-2009 by Steffen Mueller
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.6 or,

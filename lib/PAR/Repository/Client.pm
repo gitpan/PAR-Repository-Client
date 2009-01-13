@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.21_01';
+our $VERSION = '0.21_02';
 
 # list compatible repository versions
 # This is a list of numbers of the form "\d+.\d".
@@ -14,6 +14,7 @@ our $VERSION = '0.21_01';
 # first digit after the period.
 our $Compatible_Versions = {
     '0.1' => 1,
+    '0.2' => 1,
 };
 
 use constant MODULES_DBM_FILE     => 'modules_dists.dbm';
@@ -37,6 +38,7 @@ require DBM::Deep;
 require Archive::Zip;
 require File::Temp;
 require File::Copy;
+require File::Path;
 require YAML::Tiny;
 
 =head1 NAME
@@ -141,6 +143,14 @@ compatible with this version of the client.
 
 You may specify a C<http_timeout> in seconds.
 
+The C<cache_dir>
+parameter can be used to set the directory where you want the downloaded
+files to reside. It defaults to the C<$ENV{PAR_TEMP}> directory or
+otherwise the C<par> subdirectory of your system's temporary directory.
+If you set C<cache_dir> to something other than the default, the downloaded
+files should be automatically cached when the HTTP transport layer is
+used as C<LWP::mirror()> only checks for updates.
+
 =cut
 
 sub new {
@@ -167,28 +177,37 @@ sub new {
 
   my $self = bless {
     # the repository uri
-    uri => $uri,
+    uri                   => $uri,
     # The last error message
-    error => '',
+    error                 => '',
     # The hash ref of checksums for checking whether we
     # need to update the dbms
-    checksums => undef,
-    supports_checksums => undef,
+    checksums             => undef,
+    supports_checksums    => undef,
     # the modules- and scripts dbm storage
     # both the local temp file for cleanup
     # and the actual tied hash
     modules_dbm_temp_file => undef,
-    modules_dbm_hash => undef,
+    modules_dbm_hash      => undef,
     scripts_dbm_temp_file => undef,
-    scripts_dbm_hash => undef,
-    info => undef, # used for YAML info caching
-    auto_install => $args{auto_install},
-    auto_upgrade => $args{auto_upgrade},
-    installation_targets => {}, # see PAR::Dist
-    perl_version => (defined($args{perl_version}) ? $args{perl_version} : $Config::Config{version}),
-    architecture => (defined($args{architecture}) ? $args{architecture} : $Config::Config{archname}),
+    scripts_dbm_hash      => undef,
+    info                  => undef, # used for YAML info caching
+    auto_install          => $args{auto_install},
+    auto_upgrade          => $args{auto_upgrade},
+    installation_targets  => {}, # see PAR::Dist
+    perl_version          => (defined($args{perl_version}) ? $args{perl_version} : $Config::Config{version}),
+    architecture          => (defined($args{architecture}) ? $args{architecture} : $Config::Config{archname}),
+    cache_dir             => $args{cache_dir},
   } => "PAR::Repository::Client::$obj_class";
-
+  
+  if (not defined $self->{cache_dir}) {
+    $self->{cache_dir} = defined($ENV{PAR_TEMP})
+                         ? $ENV{PAR_TEMP}
+                         : File::Spec->catdir(File::Spec->tmpdir, 'par');
+  }
+  
+  File::Path::mkpath($self->{cache_dir});
+  
   $self->_init(\%args);
 
   $self->validate_repository()
@@ -1061,7 +1080,7 @@ Steffen Mueller, E<lt>smueller@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 2006-2008 by Steffen Mueller
+Copyright 2006-2009 by Steffen Mueller
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.6 or,

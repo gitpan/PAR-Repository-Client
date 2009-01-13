@@ -9,7 +9,7 @@ use base 'PAR::Repository::Client';
 use Carp qw/croak/;
 require File::Copy;
 
-our $VERSION = '0.17';
+our $VERSION = '0.21';
 
 =head1 NAME
 
@@ -66,10 +66,10 @@ sub fetch_par {
   $path =~ s/(?:\/|\\)$//;
   $path =~ s!^file://!!i;
 
-  my ($n, $v, $a, $p) = PAR::Dist::parse_dist_name($dist);
+  my ($dname, $vers, $arch, $perl) = PAR::Dist::parse_dist_name($dist);
   my $file = File::Spec->catfile(
-    File::Spec->catdir($path, $a, $p),
-    "$n-$v-$a-$p.par"
+    File::Spec->catdir($path, $arch, $perl),
+    "$dname-$vers-$arch-$perl.par"
   );
 
   if (not -f $file) {
@@ -173,9 +173,9 @@ sub _fetch_dbm_file {
   }
 
   my ($tempfh, $tempfile) = File::Temp::tempfile(
-    'temporary_zip_dbm_XXXXX',
+    'temp_zip_dbm_XXXXX',
     UNLINK => 0,
-    DIR => File::Spec->tmpdir(),
+    DIR => $self->{cache_dir},
   );
 
   File::Copy::copy($url, $tempfile);
@@ -265,7 +265,7 @@ Steffen Mueller, E<lt>smueller@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 2006-2008 by Steffen Mueller
+Copyright 2006-2009 by Steffen Mueller
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.6 or,

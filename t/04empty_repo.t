@@ -1,10 +1,14 @@
 use strict;
 use warnings;
 use Test::More tests => 46;
+
+use File::Temp ();
+BEGIN { $ENV{PAR_TEMP} = File::Temp::tempdir( CLEANUP => 1 ); }
+
 BEGIN { use_ok('PAR::Repository::Client') };
 
 chdir('t') if -d 't';
-push @INC, qw(lib t/lib);
+push @INC, 'lib', File::Spec->catdir(qw(t lib));
 require RepoMisc;
 
 my $client = RepoMisc::client_ok( 'data/emptyrepo' );
