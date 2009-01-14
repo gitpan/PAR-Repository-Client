@@ -1,5 +1,9 @@
 Revision history for Perl extension PAR::Repository::Client.
 
+0.21_03  Wed Jan 14 08:00 2009
+    - Disable File::Temp exclusive locking or else BSD is
+      unhappy.
+
 0.21_02  Tue Jan 13 20:06 2009
     - Support for setting custom cache directories with
       the cache_dir parameter to new().

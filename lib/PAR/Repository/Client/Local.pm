@@ -176,6 +176,7 @@ sub _fetch_dbm_file {
     'temp_zip_dbm_XXXXX',
     UNLINK => 0,
     DIR => $self->{cache_dir},
+    EXLOCK => 0, # FIXME no exclusive locking or else we block on BSD. What's the right solution?
   );
 
   File::Copy::copy($url, $tempfile);

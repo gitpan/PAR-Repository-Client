@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.21_02';
+our $VERSION = '0.21_03';
 
 # list compatible repository versions
 # This is a list of numbers of the form "\d+.\d".
@@ -877,6 +877,7 @@ sub modules_dbm {
     'temporary_dbm_XXXXX',
     UNLINK => 0,
     DIR => File::Spec->tmpdir(),
+    EXLOCK => 0, # FIXME no exclusive locking or else we block on BSD. What's the right solution?
   );
 
   if (not $self->_unzip_file($file, $tempfile, MODULES_DBM_FILE())) {
@@ -954,6 +955,7 @@ sub scripts_dbm {
     'temporary_dbm_XXXXX',
     UNLINK => 0,
     DIR => File::Spec->tmpdir(),
+    EXLOCK => 0, # FIXME no exclusive locking or else we block on BSD. What's the right solution?
   );
 
   if (not $self->_unzip_file($file, $tempfile, SCRIPTS_DBM_FILE())) {
