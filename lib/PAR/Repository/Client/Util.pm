@@ -63,10 +63,13 @@ sub _unzip_file {
 
 This is a private method.
 
-Given a reference to a file handle or
-a file name, this method parses a checksum file
+Given a reference to a file handle, a reference to a string
+or a file name, this method parses a checksum file
 and returns a hash reference associating file names
 with their base64 encoded MD5 hashes.
+
+If passed a ref to a string, the contents of the string will
+be assumed to contain the checksum data.
 
 =cut
 
@@ -75,9 +78,13 @@ sub _parse_dbm_checksums {
   $self->{error} = undef;
 
   my $file_or_fh = shift;
+  my $is_string = 0;
   my $fh;
-  if (ref($file_or_fh)) {
+  if (ref($file_or_fh) eq 'GLOB') {
     $fh = $file_or_fh;
+  }
+  elsif (ref($file_or_fh) eq 'SCALAR') {
+    $is_string = 1;
   }
   else {
     open $fh, '<', $file_or_fh
@@ -85,7 +92,12 @@ sub _parse_dbm_checksums {
   }
 
   my $hashes = {};
-  while (<$fh>) {
+  my @lines;
+  @lines = split /\n/, $$file_or_fh if $is_string;
+
+  while (1) {
+    local $_ = $is_string ? shift @lines : <$fh>;
+    last if not defined $_;
     next if /^\s*$/ or /^\s*#/;
     my ($file, $hash) = split /\t/, $_;
     if (not defined $file or not defined $hash) {

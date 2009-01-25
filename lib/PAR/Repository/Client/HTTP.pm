@@ -101,7 +101,6 @@ sub fetch_par {
     my $timeout = $self->{http_timeout};
     my $old_timeout = $ua->timeout();
     $ua->timeout($timeout) if defined $timeout;
-    my @s = LWP::Simple::head($file);
     my $rc = LWP::Simple::mirror( $file, $local_file );
     $ua->timeout($old_timeout) if defined $timeout;
     if (!LWP::Simple::is_success($rc) and not $rc == HTTP::Status::RC_NOT_MODIFIED()) {
@@ -112,6 +111,24 @@ sub fetch_par {
     return $local_file if -f $local_file;
     return();
   }
+}
+
+
+sub _fetch_as_data {
+  my $self = shift;
+  $self->{error} = undef;
+  my $file = shift;
+
+  my $timeout = $self->{http_timeout};
+  my $old_timeout = $ua->timeout();
+  $ua->timeout($timeout) if defined $timeout;
+  my $data = LWP::Simple::get( $file );
+  $ua->timeout($old_timeout) if defined $timeout;
+
+  return $data if defined $data;
+
+  $self->{error} = "Could not get '$file' from repository";
+  return();
 }
 
 
@@ -234,16 +251,16 @@ sub _dbm_checksums {
   my $url = $self->{uri};
   $url =~ s/\/$//;
 
-  my $file = $self->_fetch_file(
+  my $data = $self->_fetch_as_data(
     $url.'/'.PAR::Repository::Client::DBM_CHECKSUMS_FILE()
   );
 
-  if (not defined $file) {
+  if (not defined $data) {
     $self->{error} = "Repository does not support checksums";
     return();
   }
 
-  return $self->_parse_dbm_checksums($file);
+  return $self->_parse_dbm_checksums(\$data);
 }
 
 

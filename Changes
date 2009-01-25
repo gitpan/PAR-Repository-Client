@@ -1,5 +1,11 @@
 Revision history for Perl extension PAR::Repository::Client.
 
+0.22_01  Sun Jan 25 23:16 2009
+    - Implement/fix auto-upgrading.
+    - Require PAR 0.984 for upgrading.
+    - Require PAR::Dist 0.43 so install_module doesn't fail
+      with newer ExtUtils::Installs
+
 0.21_03  Wed Jan 14 08:00 2009
     - Disable File::Temp exclusive locking or else BSD is
       unhappy.

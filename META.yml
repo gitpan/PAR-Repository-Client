@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               PAR-Repository-Client
-version:            0.21_03
+version:            0.22_01
 abstract:           Access PAR repositories
 author:
     - Steffen Müller <smueller@cpan.org>
@@ -13,8 +13,8 @@ requires:
     DBM::Deep:            1.0012
     File::Spec:           0
     LWP::Simple:          0
-    PAR:                  0.981_01
-    PAR::Dist:            0.20
+    PAR:                  0.984
+    PAR::Dist:            0.43
     PAR::Repository::Query:  0.12
     version:              0.50
     YAML::Tiny:           0

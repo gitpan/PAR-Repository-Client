@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.21_03';
+our $VERSION = '0.22_01';
 
 # list compatible repository versions
 # This is a list of numbers of the form "\d+.\d".
@@ -295,7 +295,9 @@ loading preferably.)
 Searches for a specified namespace in the repository and downloads
 the corresponding PAR distribution. Automatically loads PAR
 and appends the downloaded PAR distribution to the list of
-PARs to load from.
+PARs to load from. If auto-installation or auto-upgrading was
+enabled, the contents of the PAR distribution will
+be installed in addition to loading the PAR.
 
 Returns the name of the local
 PAR file. Think of this as C<require_module> without actually
@@ -321,11 +323,11 @@ sub get_module {
   else {
     $local_par_file = $self->_fetch_module($namespace);
     return() if not defined $local_par_file;
-
-    require PAR;
-    PAR->import( { file => $local_par_file, fallback => ($fallback?1:0) } );
   }
   return() if not defined $local_par_file;
+
+  require PAR;
+  PAR->import( { file => $local_par_file, fallback => ($fallback?1:0) } );
 
   return $local_par_file;
 }
@@ -436,15 +438,13 @@ sub upgrade_module {
 
   # get local version
   my $local_version;
-  eval "require $namespace; \$local_version = ${namespace}->VERSION;";
-  $local_version = version->new($local_version) if not eval {$local_version->isa('version')};
+  local @PAR::RepositoryObjects = ();
+  local @PAR::UpgradeRepositoryObjects = ();
+  eval "require ${namespace}; \$local_version = ${namespace}->VERSION;";
+  $local_version = version->new($local_version) if defined($local_version) and not eval {$local_version->isa('version')};
 
   # no local version found. Install from repo
   if (not defined $local_version) {
-    my $mod = $namespace;
-    $mod =~ s/::/\//;
-    $mod .= '.pm';
-    delete $INC{$mod};
     return $self->install_module($namespace);
   }
 
@@ -471,10 +471,6 @@ sub upgrade_module {
   $repo_version = version->new($repo_version) if not eval {$repo_version->isa('version')};
 
   if ($repo_version > $local_version) {
-    my $mod = $namespace;
-    $mod =~ s/::/\//;
-    $mod .= '.pm';
-    delete $INC{$mod};
     return $self->install_module($namespace);
   }
 
