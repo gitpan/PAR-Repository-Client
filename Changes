@@ -1,5 +1,11 @@
 Revision history for Perl extension PAR::Repository::Client.
 
+0.23_02  Mon Feb  2 21:14 2009
+    - Attempt band-aid fix for a better error recovery in case
+      of a failing dependency resolution.
+    - Fix for the dependencies test (set arch and perl version
+      manually)
+
 0.23_01  Mon Feb  2 01:38 2009
     - "static_dependencies" option for automatic resolution
       of the statically declared dependencies.

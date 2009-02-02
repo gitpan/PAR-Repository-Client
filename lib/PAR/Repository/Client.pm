@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.23_01';
+our $VERSION = '0.23_02';
 
 # list compatible repository versions
 # This is a list of numbers of the form "\d+.\d".

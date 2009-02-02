@@ -12,6 +12,8 @@ push @INC, 'lib', File::Spec->catdir(qw(t lib));
 require RepoMisc;
 
 my $client = RepoMisc::client_ok( File::Spec->catdir('data', 'repo_with_simple_dependencies') );
+$client->perl_version('5.10.0');
+$client->architecture('x86_64-linux-gnu-thread-multi');
 
 my $deps = $client->_resolve_static_dependencies("File-Stream-2.20-x86_64-linux-gnu-thread-multi-5.10.0.par");
 ok(ref($deps) eq 'ARRAY');

@@ -12,7 +12,7 @@ WriteMakefile(
         'DBM::Deep' => '1.0012',
         'version' => '0.50',
         'File::Spec' => '0',
-        'PAR::Dist' => '0.43',
+        'PAR::Dist' => '0.44',
         'PAR' => '0.985',
         'LWP::Simple' => '0',
         'Archive::Zip' => '0',

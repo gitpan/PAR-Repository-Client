@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.21';
+our $VERSION = '0.23';
 
 use Carp qw/croak/;
 
@@ -81,9 +81,10 @@ sub _resolve_static_dependencies {
     next if $module_seen{$module}++;
     next if not exists $modh->{$module}; # FIXME should this be somehow reported?
     my $dist = $self->prefered_distribution($module, $modh->{$module});
+    next if not defined $dist;
     next if $dist_seen{$dist}++;
     push @dep_dists, $dist;
-    push @module_queue, keys %{$deph->{$dist}};
+    push @module_queue, keys %{$deph->{$dist}} if exists $deph->{$dist};
   }
 
   return \@dep_dists;
