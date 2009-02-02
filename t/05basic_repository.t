@@ -14,7 +14,7 @@ require RepoMisc;
 
 {
   # unsuccessful load
-  my $client = RepoMisc::client_ok( 'data/repo_with_incompatible_module' );
+  my $client = RepoMisc::client_ok( File::Spec->catdir('data', 'repo_with_incompatible_module') );
 
   ok($client->modules_dbm(), 'module_dbm available');
   

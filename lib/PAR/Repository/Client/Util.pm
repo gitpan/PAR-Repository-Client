@@ -59,64 +59,34 @@ sub _unzip_file {
 }
 
 
-=head2 _parse_dbm_checksums
-
-This is a private method.
-
-Given a reference to a file handle, a reference to a string
-or a file name, this method parses a checksum file
-and returns a hash reference associating file names
-with their base64 encoded MD5 hashes.
-
-If passed a ref to a string, the contents of the string will
-be assumed to contain the checksum data.
-
-=cut
-
-sub _parse_dbm_checksums {
+# given a distribution name, recursively determines all distributions
+# it depends on
+sub _resolve_static_dependencies {
   my $self = shift;
-  $self->{error} = undef;
+  my $distribution = shift;
 
-  my $file_or_fh = shift;
-  my $is_string = 0;
-  my $fh;
-  if (ref($file_or_fh) eq 'GLOB') {
-    $fh = $file_or_fh;
-  }
-  elsif (ref($file_or_fh) eq 'SCALAR') {
-    $is_string = 1;
-  }
-  else {
-    open $fh, '<', $file_or_fh
-      or die "Could not open file '$file_or_fh' for reading: $!";
-  }
+  my ($deph) = $self->dependencies_dbm();
+  return([]) if not exists $deph->{$distribution};
+  
+  my ($modh) = $self->modules_dbm();
 
-  my $hashes = {};
-  my @lines;
-  @lines = split /\n/, $$file_or_fh if $is_string;
+  my @module_queue = (keys %{$deph->{$distribution}});
+  my @dep_dists;
+  my %module_seen;
+  my %dist_seen;
 
-  while (1) {
-    local $_ = $is_string ? shift @lines : <$fh>;
-    last if not defined $_;
-    next if /^\s*$/ or /^\s*#/;
-    my ($file, $hash) = split /\t/, $_;
-    if (not defined $file or not defined $hash) {
-      $self->{error} = "Error reading repository checksums.";
-      return();
-    }
-    $hash =~ s/\s+$//;
-    $hashes->{$file} = $hash;
+  while (@module_queue) {
+    #use Data::Dumper; warn Dumper \@module_queue;
+    my $module = shift @module_queue;
+    next if $module_seen{$module}++;
+    next if not exists $modh->{$module}; # FIXME should this be somehow reported?
+    my $dist = $self->prefered_distribution($module, $modh->{$module});
+    next if $dist_seen{$dist}++;
+    push @dep_dists, $dist;
+    push @module_queue, keys %{$deph->{$dist}};
   }
 
-  return $hashes;
-}
-
-
-
-sub DESTROY {
-  my $self = shift;
-  $self->close_modules_dbm;
-  $self->close_scripts_dbm;
+  return \@dep_dists;
 }
 
 1;

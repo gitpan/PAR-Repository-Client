@@ -14,7 +14,7 @@ require RepoMisc;
 
 {
   # successful load
-  my $client = RepoMisc::client_ok( 'data/repo_with_compatible_module' );
+  my $client = RepoMisc::client_ok( File::Spec->catdir('data', 'repo_with_compatible_module') );
 
   my $idir = RepoMisc::set_installation_targets($client);
   

@@ -13,7 +13,7 @@ WriteMakefile(
         'version' => '0.50',
         'File::Spec' => '0',
         'PAR::Dist' => '0.43',
-        'PAR' => '0.984',
+        'PAR' => '0.985',
         'LWP::Simple' => '0',
         'Archive::Zip' => '0',
         'YAML::Tiny' => '0',

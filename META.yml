@@ -1,28 +1,22 @@
 --- #YAML:1.0
-name:               PAR-Repository-Client
-version:            0.22_01
-abstract:           Access PAR repositories
-author:
+name:                PAR-Repository-Client
+version:             0.23_01
+abstract:            Access PAR repositories
+license:             perl
+author:              
     - Steffen Müller <smueller@cpan.org>
-license:            perl
-distribution_type:  module
-configure_requires:
-    ExtUtils::MakeMaker:  0
-requires:
-    Archive::Zip:         0
-    DBM::Deep:            1.0012
-    File::Spec:           0
-    LWP::Simple:          0
-    PAR:                  0.984
-    PAR::Dist:            0.43
-    PAR::Repository::Query:  0.12
-    version:              0.50
-    YAML::Tiny:           0
-no_index:
-    directory:
-        - t
-        - inc
-generated_by:       ExtUtils::MakeMaker version 6.48
+generated_by:        ExtUtils::MakeMaker version 6.42
+distribution_type:   module
+requires:     
+    Archive::Zip:                  0
+    DBM::Deep:                     1.0012
+    File::Spec:                    0
+    LWP::Simple:                   0
+    PAR:                           0.985
+    PAR::Dist:                     0.43
+    PAR::Repository::Query:        0.12
+    version:                       0.50
+    YAML::Tiny:                    0
 meta-spec:
-    url:      http://module-build.sourceforge.net/META-spec-v1.4.html
-    version:  1.4
+    url:     http://module-build.sourceforge.net/META-spec-v1.3.html
+    version: 1.3

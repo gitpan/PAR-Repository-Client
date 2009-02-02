@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.22_01';
+our $VERSION = '0.23_01';
 
 # list compatible repository versions
 # This is a list of numbers of the form "\d+.\d".
@@ -17,14 +17,16 @@ our $Compatible_Versions = {
     '0.2' => 1,
 };
 
-use constant MODULES_DBM_FILE     => 'modules_dists.dbm';
-use constant SYMLINKS_DBM_FILE    => 'symlinks.dbm';
-use constant SCRIPTS_DBM_FILE     => 'scripts_dists.dbm';
-use constant REPOSITORY_INFO_FILE => 'repository_info.yml';
-use constant DBM_CHECKSUMS_FILE   => 'dbm_checksums.txt';
+use constant MODULES_DBM_FILE      => 'modules_dists.dbm';
+use constant SYMLINKS_DBM_FILE     => 'symlinks.dbm';
+use constant SCRIPTS_DBM_FILE      => 'scripts_dists.dbm';
+use constant DEPENDENCIES_DBM_FILE => 'dependencies.dbm';
+use constant REPOSITORY_INFO_FILE  => 'repository_info.yml';
+use constant DBM_CHECKSUMS_FILE    => 'dbm_checksums.txt';
 
-use base 'PAR::Repository::Query';
-use base 'PAR::Repository::Client::Util';
+use base 'PAR::Repository::Query',
+         'PAR::Repository::Client::Util',
+         'PAR::Repository::Client::DBM';
 
 require PAR::Repository::Client::HTTP;
 require PAR::Repository::Client::Local;
@@ -68,14 +70,14 @@ PAR::Repository::Client - Access PAR repositories
 This module represents the client for PAR repositories as
 implemented by the L<PAR::Repository> module.
 
-Chances are, you should be looking at the L<PAR> module
+Chances are you should be looking at the L<PAR> module
 instead. Starting with version 0.950, it supports
 automatically loading any modules that aren't found on your
 system from a repository. If you need finer control than that,
 then this module is the right one to use.
 
 You can use this module to access repositories in one of
-two ways: On your local filesystem or via HTTP. The
+two ways: On your local filesystem or via HTTP(S?). The
 access methods are implemented in
 L<PAR::Repository::Client::HTTP> and L<PAR::Repository::Client::Local>.
 Any common code is in this module.
@@ -128,6 +130,14 @@ specified module does not exist on the local system yet or is outdated.
 You cannot set both I<auto_install> and I<auto_upgrade>. If you do,
 you will get a fatal error.
 
+If you set the C<static_dependencies> option to a true value,
+then the inter-distribution dependency information that is retrieved
+from the repository will be used to recursively apply your requested
+action to all dependencies. Essentially, this makes the C<install_module>
+method act like a real package manager similar to PPM.
+In contrast, the default behaviour is to fetch distributions only
+on demand and potentially recursively.
+
 In order to control where the modules are installed to, you can
 use the C<installation_targets> method.
 
@@ -178,22 +188,29 @@ sub new {
   my $self = bless {
     # the repository uri
     uri                   => $uri,
+
     # The last error message
     error                 => '',
+
     # The hash ref of checksums for checking whether we
     # need to update the dbms
     checksums             => undef,
     supports_checksums    => undef,
+
     # the modules- and scripts dbm storage
     # both the local temp file for cleanup
     # and the actual tied hash
-    modules_dbm_temp_file => undef,
-    modules_dbm_hash      => undef,
-    scripts_dbm_temp_file => undef,
-    scripts_dbm_hash      => undef,
+    modules_dbm_temp_file      => undef,
+    modules_dbm_hash           => undef,
+    scripts_dbm_temp_file      => undef,
+    scripts_dbm_hash           => undef,
+    dependencies_dbm_temp_file => undef,
+    dependencies_dbm_hash      => undef,
+
     info                  => undef, # used for YAML info caching
     auto_install          => $args{auto_install},
     auto_upgrade          => $args{auto_upgrade},
+    static_dependencies   => $args{static_dependencies},
     installation_targets  => {}, # see PAR::Dist
     perl_version          => (defined($args{perl_version}) ? $args{perl_version} : $Config::Config{version}),
     architecture          => (defined($args{architecture}) ? $args{architecture} : $Config::Config{archname}),
@@ -313,54 +330,40 @@ sub get_module {
 
   $self->{error} = undef;
 
-  my $local_par_file;
+  my @local_par_files;
   if ($self->{auto_install}) {
-    $local_par_file = $self->install_module($namespace);
+    @local_par_files = $self->install_module($namespace);
   }
   elsif ($self->{auto_upgrade}) {
-    $local_par_file = $self->upgrade_module($namespace);
+    @local_par_files = $self->upgrade_module($namespace);
+  }
+  elsif ($self->{static_dependencies}) {
+    my $deps = $self->get_module_dependencies($namespace);
+    return() if not ref $deps;
+
+    foreach my $dep_dist (@$deps) {
+      my $local_par_file = $self->_fetch_dist($dep_dist);
+      return() if not defined $local_par_file;
+      push @local_par_files, $local_par_file;
+    }
   }
   else {
-    $local_par_file = $self->_fetch_module($namespace);
+    my $dist = $self->_module2dist($namespace);
+    return() if not defined $dist;
+    my $local_par_file = $self->_fetch_dist($dist);
     return() if not defined $local_par_file;
+    push @local_par_files, $local_par_file;
   }
-  return() if not defined $local_par_file;
+  return() if not @local_par_files;
 
   require PAR;
-  PAR->import( { file => $local_par_file, fallback => ($fallback?1:0) } );
+  foreach my $local_par_file ($fallback ? @local_par_files : reverse(@local_par_files)) {
+    PAR->import( { file => $local_par_file, fallback => ($fallback?1:0) } );
+  }
 
-  return $local_par_file;
+  return shift @local_par_files; # FIXME should this return the full array?
 }
 
-sub _fetch_module {
-  my $self = shift;
-  my $namespace = shift;
-
-  $self->{error} = undef;
-
-  my ($modh) = $self->modules_dbm;
-  if (not defined $modh) {
-    return();
-  }
-
-  if (not exists $modh->{$namespace} or not defined $modh->{$namespace}) {
-    $self->{error} = "Could not find module '$namespace' in the repository.";
-    return();
-  }
-
-  my $dist = $self->prefered_distribution($namespace, $modh->{$namespace});
-  if (not defined $dist) {
-    $self->{error} = "PAR: Could not find a distribution for package '$namespace'";
-    return();
-  }
-
-  my $local_par_file = $self->fetch_par($dist);
-  if (not defined $local_par_file or not -f $local_par_file) {
-    return();
-  }
-
-  return $local_par_file;
-}
 
 =head2 install_module
 
@@ -386,15 +389,30 @@ sub install_module {
 
   $self->{error} = undef;
 
-  my $local_par_file = $self->_fetch_module($namespace);
-  return() if not defined $local_par_file;
+  my @local_par_files;
+  if ($self->{static_dependencies}) {
+    my $deps = $self->get_module_dependencies($namespace);
+    return() if not ref $deps;
 
-  PAR::Dist::install_par(
-    %{$self->installation_targets()},
-    dist => $local_par_file,
-  ) or return ();
+    foreach my $dep_dist (@$deps) {
+      my $local_par_file = $self->_fetch_dist($dep_dist);
+      return() if not defined $local_par_file;
+      push @local_par_files, $local_par_file;
+    }
+  }
+  else {
+    push @local_par_files, $self->_fetch_module($namespace);
+  }
+  return() if not @local_par_files;
 
-  return $local_par_file;
+  foreach my $local_par_file (@local_par_files) {
+    PAR::Dist::install_par(
+      %{$self->installation_targets()},
+      dist => $local_par_file,
+    ) or return ();
+  }
+
+  return shift @local_par_files; # FIXME should this return the whole array?
 }
 
 
@@ -438,7 +456,7 @@ sub upgrade_module {
 
   # get local version
   my $local_version;
-  local @PAR::RepositoryObjects = ();
+  local @PAR::RepositoryObjects = (); # do not load from remote!
   local @PAR::UpgradeRepositoryObjects = ();
   eval "require ${namespace}; \$local_version = ${namespace}->VERSION;";
   $local_version = version->new($local_version) if defined($local_version) and not eval {$local_version->isa('version')};
@@ -496,53 +514,114 @@ scripts. This differs from the behaviour for mdoules.
 
 =cut
 
-
 sub run_script {
   my $self = shift;
   my $script = shift;
 
-  $self->{error} = undef;
+  my @local_par_files;
+  if ($self->{static_dependencies}) {
+    my $deps = $self->get_script_dependencies($script);
+    return() if not ref $deps;
 
-  my ($scrh) = $self->scripts_dbm;
-  if (not defined $scrh) {
-    return();
+    foreach my $dep_dist (@$deps) {
+      my $local_par_file = $self->_fetch_dist($dep_dist);
+      return() if not defined $local_par_file;
+      push @local_par_files, $local_par_file;
+    }
   }
-
-  my $dists = $scrh->{$script};
-  if (not defined $dists) {
-    $self->{error} = "Could not find script '$script' in the repository.";
-    return();
+  else {
+    my $dist = $self->_script2dist($script);
+    return() unless defined $dist;
+    my $local_par_file = $self->fetch_par($dist);
+    return() unless defined $local_par_file;
+    push @local_par_files, $local_par_file;
   }
-  my $dist = $self->prefered_distribution($script, $dists);
-  if (not defined $dist) {
-    $self->{error} = "PAR: Could not find a distribution for script '$script'";
-    return();
-  }
-
-  my $local_par_file = $self->fetch_par($dist);
-  if (not defined $local_par_file or not -f $local_par_file) {
-    return();
-  }
+  return() if not @local_par_files;
 
   if ($self->{auto_install}) {
-    PAR::Dist::install_par(
+    foreach my $local_par_file (@local_par_files) {
+      PAR::Dist::install_par(
         %{ $self->installation_targets() },
         dist => $local_par_file,
-        ) or return ();
+      ) or return ();
+    }
   }
   elsif ($self->{auto_upgrade}) {
     # FIXME This is not the right way to do it!
-    PAR::Dist::install_par(
+    foreach my $local_par_file (@local_par_files) {
+      PAR::Dist::install_par(
         %{ $self->installation_targets() },
         dist => $local_par_file,
-        ) or return ();
+      ) or return ();
+    }
   }
-  
+
   require PAR;
-  PAR->import( { file => $local_par_file, run => $script } );
+  my $script_par = shift @local_par_files;
+  foreach my $local_par_file (@local_par_files) {
+    PAR->import( { file => $local_par_file } );
+  }
+
+  PAR->import( { file => $script_par, run => $script } );
 
   # doesn't happen!?
   return 1;
+}
+
+
+=head2 get_module_dependencies
+
+Given a module name, determines the correct distribution in
+the repository that supplies the module. Returns a reference
+to an array containing that distribution and all distributions
+it depends on. The distribution that contains the given module
+is the first in the array.
+
+Returns the empty list on failure.
+
+=cut
+
+sub get_module_dependencies {
+  my $self = shift;
+  my $namespace = shift;
+  $self->{error} = undef,
+
+  my $dist = $self->_module2dist($namespace);
+  return() if not defined $dist;
+
+  my $deps = $self->_resolve_static_dependencies($dist);
+  return() if not ref $deps;
+  unshift @$deps, $dist;
+
+  return $deps;
+}
+
+
+=head2 get_script_dependencies
+
+Given a script name, determines the correct distribution in
+the repository that supplies the script. Returns a reference
+to an array containing that distribution and all distributions
+it depends on. The distribution that contains the given script
+is the first in the array.
+
+Returns the empty list on failure.
+
+=cut
+
+sub get_script_dependencies {
+  my $self = shift;
+  my $script = shift;
+  $self->{error} = undef,
+
+  my $dist = $self->_script2dist($script);
+  return() if not defined $dist;
+
+  my $deps = $self->_resolve_static_dependencies($dist);
+  return() if not ref $deps;
+  unshift @$deps, $dist;
+
+  return $deps;
 }
 
 
@@ -577,6 +656,10 @@ sub installation_targets {
 }
 
 
+=head1 ACCESSORS
+
+These methods get or set some attributes of the repository client.
+
 =head2 error
 
 Returns the last error message if there was an error or
@@ -584,16 +667,12 @@ the empty list otherwise.
 
 =cut
 
-
 sub error {
   my $self = shift;
   my $err = $self->{error};
   return(defined($err) ? $err : ());
 }
 
-=head1 ACCESSORS
-
-These methods get or set some attributes of the repository client.
 
 =head2 perl_version
 
@@ -615,6 +694,7 @@ sub perl_version {
   return $self->{perl_version};
 }
 
+
 =head2 architecture 
 
 Sets and/or returns the name of the architecture which is used to choose the right
@@ -634,6 +714,7 @@ sub architecture {
   $self->{architecture} = shift @_ if @_;
   return $self->{architecture};
 }
+
 
 =head1 OTHER METHODS
 
@@ -708,6 +789,7 @@ sub prefered_distribution {
   return $dist->[0];
 }
 
+
 =head2 validate_repository_version
 
 Accesses the repository meta information and validates that it
@@ -741,316 +823,113 @@ sub validate_repository_version {
     $self->{error} = "Repository has an incompatible version (".$info->[0]{repository_version}.")";
     return();
   }
-  return 1;
-}
 
-=head2 need_dbm_update
-
-Takes one or no arguments. Without arguments, all DBM files are
-checked. With an argument, only the specified DBM file will be checked.
-
-Returns true if either one of the following conditions match:
-
-=over 2
-
-=item
-
-The repository does not support checksums.
-
-=item
-
-The checksums (and thus also the DBM files) haven't been
-downloaded yet.
-
-=item
-
-The local copies of the checksums do not match those of the repository.
-
-=back
-
-In cases two and three above, the return value is actually the hash
-reference of checksums that was fetched from the repository.
-
-Returns the empty list if the local checksums match those of the
-repository exactly.
-
-You don't usually need to call this directly. By default, DBM files
-are only fetched from the repository if necessary.
-
-=cut
-
-sub need_dbm_update {
-  my $self = shift;
-  $self->{error} = undef;
-
-  my $check_file = shift;
-  $check_file .= '.zip' if defined $check_file and not $check_file =~ /\.zip$/;
-
-  my $support = $self->{supports_checksums};
-  if (defined $support and not $support) {
-    return 1;
-  }
-
-  my $checksums = $self->_dbm_checksums();
-
-  if (not defined $checksums) {
-    $self->{supports_checksums} = 0;
-    return 1;
-  }
-  else {
-    $self->{supports_checksums} = 1;
-  }
-
-  if (not defined $self->{checksums} or keys %{$self->{checksums}} == 0) {
-    # never fetched checksums before.
-    return $checksums;
-  }
-  else {
-    # we fetched checksums earlier, match them
-    my $local_checksums = $self->{checksums};
-    if (not defined $check_file) {
-      return $checksums if keys(%$local_checksums) != keys(%$checksums);
-      foreach my $file (keys %$checksums) {
-        return $checksums
-          if not exists $local_checksums->{$file}
-          or not $local_checksums->{$file} eq $checksums->{$file};
-      }
-    }
-    else {
-      return $checksums
-        if not exists $local_checksums->{$check_file}
-        or not exists $checksums->{$check_file} # shouldn't happen
-        or not $local_checksums->{$check_file} eq $checksums->{$check_file};
-    }
+  $repo_version =~ s/_.*$//; # remove dev suffix
+  if ($repo_version < 0.18 and $self->{static_dependencies}) {
+    $self->{error} = "Client has static dependency resolution enabled, but repository does not support that. "
+                    ."Either upgrade your repository to version 0.18 or greater or disable static dependency "
+                    ."resolution in the client.";
     return();
-  }
-}
-
-
-=head2 modules_dbm
-
-Fetches the C<modules_dists.dbm> database from the repository,
-ties it to a L<DBM::Deep> object and returns a tied hash
-reference or the empty list on failure. Second return
-value is the name of the local temporary file.
-
-In case of failure, an error message is available via
-the C<error()> method.
-
-The method uses the C<_fetch_dbm_file()> method which must be
-implemented in a subclass such as L<PAR::Repository::Client::HTTP>.
-
-=cut
-
-sub modules_dbm {
-  my $self = shift;
-  $self->{error} = undef;
-
-  my $checksums = $self->need_dbm_update();
-  if ($self->{modules_dbm_hash}) {
-    # need new dbm file?
-    return($self->{modules_dbm_hash}, $self->{modules_dbm_temp_file})
-      if not $checksums;
-
-    # does this particular dbm need to be updated?
-    if ($self->{checksums}) {
-      my $local_checksum = $self->{checksums}{MODULES_DBM_FILE().".zip"};
-      my $remote_checksum = $checksums->{MODULES_DBM_FILE().".zip"};
-      return($self->{modules_dbm_hash}, $self->{modules_dbm_temp_file})
-        if defined $local_checksum and defined $remote_checksum
-           and $local_checksum eq $remote_checksum;
-    }
-
-    # just to make sure
-    $self->close_modules_dbm;
-  }
-
-  my $file = $self->_fetch_dbm_file(MODULES_DBM_FILE().".zip");
-  # (error set by _fetch_dbm_file)
-  return() if not defined $file; # or not -f $file; # <--- _fetch_dbm_file should do the stat!
-
-  my ($tempfh, $tempfile) = File::Temp::tempfile(
-    'temporary_dbm_XXXXX',
-    UNLINK => 0,
-    DIR => File::Spec->tmpdir(),
-    EXLOCK => 0, # FIXME no exclusive locking or else we block on BSD. What's the right solution?
-  );
-
-  if (not $self->_unzip_file($file, $tempfile, MODULES_DBM_FILE())) {
-    $self->{error} = "Could not unzip dbm file '$file' to '$tempfile'";
-    return();
-  }
-
-  unlink $file;
-
-  $self->{modules_dbm_temp_file} = $tempfile;
-
-  my %hash;
-  my $obj = tie %hash, "DBM::Deep", {
-    file => $tempfile,
-    locking => 1,
-    autoflush => 0,
-  }; 
-
-  $self->{modules_dbm_hash} = \%hash;
-
-  # save this dbm file checksum
-  if (ref($checksums)) {
-    if (not $self->{checksums}) {
-      $self->{checksums} = {};
-    }
-    $self->{checksums}{MODULES_DBM_FILE().".zip"} = $checksums->{MODULES_DBM_FILE().".zip"};
-  }
-
-  return (\%hash, $tempfile);
-}
-
-=head2 scripts_dbm
-
-Fetches the C<scripts_dists.dbm> database from the repository,
-ties it to a L<DBM::Deep> object and returns a tied hash
-reference or the empty list on failure. Second return
-value is the name of the local temporary file.
-
-In case of failure, an error message is available via
-the C<error()> method.
-
-The method uses the C<_fetch_dbm_file()> method which must be
-implemented in a subclass such as L<PAR::Repository::Client::HTTP>.
-
-=cut
-
-sub scripts_dbm {
-  my $self = shift;
-  $self->{error} = undef;
-
-  my $checksums = $self->need_dbm_update();
-  if ($self->{scripts_dbm_hash}) {
-    # need new dbm file?
-    return($self->{scripts_dbm_hash}, $self->{scripts_dbm_temp_file})
-      if not $checksums;
-
-    # does this particular dbm need to be updated?
-    if ($self->{checksums}) {
-      my $local_checksum = $self->{checksums}{SCRIPTS_DBM_FILE().".zip"};
-      my $remote_checksum = $checksums->{SCRIPTS_DBM_FILE().".zip"};
-      return($self->{scripts_dbm_hash}, $self->{scripts_dbm_temp_file})
-        if defined $local_checksum and defined $remote_checksum
-           and $local_checksum eq $remote_checksum;
-    }
-
-    # just to make sure
-    $self->close_scripts_dbm;
-  }
-
-  my $file = $self->_fetch_dbm_file(SCRIPTS_DBM_FILE().".zip");
-  # (error set by _fetch_dbm_file)
-  return() if not defined $file; # or not -f $file; # <--- _fetch_dbm_file should do the stat!
-
-  my ($tempfh, $tempfile) = File::Temp::tempfile(
-    'temporary_dbm_XXXXX',
-    UNLINK => 0,
-    DIR => File::Spec->tmpdir(),
-    EXLOCK => 0, # FIXME no exclusive locking or else we block on BSD. What's the right solution?
-  );
-
-  if (not $self->_unzip_file($file, $tempfile, SCRIPTS_DBM_FILE())) {
-    $self->{error} = "Could not unzip dbm file '$file' to '$tempfile'";
-    return();
-  }
-
-  unlink $file;
-
-  $self->{scripts_dbm_temp_file} = $tempfile;
-
-  my %hash;
-  my $obj = tie %hash, "DBM::Deep", {
-    file => $tempfile,
-    locking => 1,
-    autoflush => 0,
-  }; 
-
-  $self->{scripts_dbm_hash} = \%hash;
-
-  # save this dbm file checksum
-  if (ref($checksums)) {
-    if (not $self->{checksums}) {
-      $self->{checksums} = {};
-    }
-    $self->{checksums}{SCRIPTS_DBM_FILE().".zip"} = $checksums->{SCRIPTS_DBM_FILE().".zip"};
-  }
-
-  return (\%hash, $tempfile);
-}
-
-
-=head2 close_modules_dbm
-
-Closes the C<modules_dists.dbm> file and does all necessary
-cleaning up.
-
-This is called when the object is destroyed.
-
-=cut
-
-sub close_modules_dbm {
-  my $self = shift;
-  my $hash = $self->{modules_dbm_hash};
-  return if not defined $hash;
-
-  my $obj = tied($hash);
-  $self->{modules_dbm_hash} = undef;
-  undef $hash;
-  undef $obj;
-
-  unlink $self->{modules_dbm_temp_file};
-  $self->{modules_dbm_temp_file} = undef;
-  if ($self->{checksums}) {
-    delete $self->{checksums}{MODULES_DBM_FILE().".zip"};
   }
 
   return 1;
 }
 
-=head2 close_scripts_dbm
 
-Closes the C<scripts_dists.dbm> file and does all necessary
-cleaning up.
-
-This is called when the object is destroyed.
-
-=cut
-
-sub close_scripts_dbm {
+# given a module name, find the prefered distribution
+sub _module2dist {
   my $self = shift;
-  my $hash = $self->{scripts_dbm_hash};
-  return if not defined $hash;
+  my $namespace = shift;
 
-  my $obj = tied($hash);
-  $self->{scripts_dbm_hash} = undef;
-  undef $hash;
-  undef $obj;
+  $self->{error} = undef;
 
-  unlink $self->{scripts_dbm_temp_file};
-  $self->{scripts_dbm_temp_file} = undef;
-  if ($self->{checksums}) {
-    delete $self->{checksums}{SCRIPTS_DBM_FILE().".zip"};
+  my ($modh) = $self->modules_dbm;
+  if (not defined $modh) {
+    return();
   }
 
-  return 1;
+  if (not exists $modh->{$namespace} or not defined $modh->{$namespace}) {
+    $self->{error} = "Could not find module '$namespace' in the repository.";
+    return();
+  }
+
+  my $dist = $self->prefered_distribution($namespace, $modh->{$namespace});
+  if (not defined $dist) {
+    $self->{error} = "PAR: Could not find a distribution for package '$namespace'";
+    return();
+  }
+  return $dist;
 }
 
-=head1 PRIVATE METHODS
 
-These private methods should not be relied upon from the outside of
-the module. (See also: L<PAR::Repository::Client::Util>)
+# resolve a script to its prefered distribution
+sub _script2dist {
+  my $self = shift;
+  my $script = shift;
 
-=cut
+  $self->{error} = undef;
+
+  my ($scrh) = $self->scripts_dbm;
+  if (not defined $scrh) {
+    return();
+  }
+
+  my $dists = $scrh->{$script};
+  if (not defined $dists) {
+    $self->{error} = "Could not find script '$script' in the repository.";
+    return();
+  }
+  my $dist = $self->prefered_distribution($script, $dists);
+  if (not defined $dist) {
+    $self->{error} = "PAR: Could not find a distribution for script '$script'";
+    return();
+  }
+  
+  return $dist;
+}
+
+
+# download a distribution
+sub _fetch_dist {
+  my $self = shift;
+  my $dist = shift;
+
+  my $local_par_file = $self->fetch_par($dist);
+  return() if not defined $local_par_file or not -f $local_par_file;
+
+  return $local_par_file;
+}
+
+
+# resolve a namespace to a distribution and download it
+sub _fetch_module {
+  my $self = shift;
+  my $namespace = shift;
+
+  my $dist = $self->_module2dist($namespace);
+  return() unless defined $dist;
+
+  return $self->_fetch_dist($dist);
+}
+
+
+# resolve a script to a distribution and download it
+sub _fetch_script {
+  my $self = shift;
+  my $namespace = shift;
+
+  my $dist = $self->_script2dist($namespace);
+  return() unless defined $dist;
+
+  return $self->_fetch_dist($dist);
+}
+
 
 sub DESTROY {
   my $self = shift;
   $self->close_modules_dbm;
   $self->close_scripts_dbm;
+  $self->close_dependencies_dbm;
 }
 
 1;
