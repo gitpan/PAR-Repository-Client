@@ -1,5 +1,8 @@
 Revision history for Perl extension PAR::Repository::Client.
 
+0.24  Thu Feb 19 17:16 2009
+    - Promote to stable release
+
 0.23_02  Mon Feb  2 21:14 2009
     - Attempt band-aid fix for a better error recovery in case
       of a failing dependency resolution.
