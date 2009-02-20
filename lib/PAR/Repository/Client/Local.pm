@@ -174,7 +174,7 @@ sub _fetch_dbm_file {
 
   my ($tempfh, $tempfile) = File::Temp::tempfile(
     'temp_zip_dbm_XXXXX',
-    UNLINK => 0,
+    UNLINK => 1, # because we cache the suckers by default
     DIR => $self->{cache_dir},
     EXLOCK => 0, # FIXME no exclusive locking or else we block on BSD. What's the right solution?
   );

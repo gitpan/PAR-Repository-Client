@@ -13,6 +13,7 @@ sub client_ok {
   my $client = PAR::Repository::Client->new(
     uri => $path,
     verbosity => 3,
+    cache_dir => $ENV{PAR_TEMP},
   );
 
   Test::More::isa_ok($client, 'PAR::Repository::Client');

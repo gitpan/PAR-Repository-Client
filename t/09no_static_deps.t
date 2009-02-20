@@ -20,6 +20,7 @@ eval {
   $client = PAR::Repository::Client->new(
     uri => File::Spec->catdir(qw(data repo_no_static_deps)),
     static_dependencies => 1,
+    cache_dir => $ENV{PAR_TEMP}, # be a good /tmp citizen
   );
 };
 ok( $@ );
@@ -30,6 +31,7 @@ eval {
   $client = PAR::Repository::Client->new(
     uri => File::Spec->catdir(qw(data repo_no_static_deps)),
     static_dependencies => 0,
+    cache_dir => $ENV{PAR_TEMP}, # be a good /tmp citizen
   );
 };
 ok( !$@ );

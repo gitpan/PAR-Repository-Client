@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.24';
+our $VERSION = '0.24_01';
 
 # list compatible repository versions
 # This is a list of numbers of the form "\d+.\d".
@@ -42,6 +42,7 @@ require File::Temp;
 require File::Copy;
 require File::Path;
 require YAML::Tiny;
+require PAR;
 
 =head1 NAME
 
@@ -110,13 +111,25 @@ Following is a list of class and instance methods.
 
 Creates a new PAR::Repository::Client object. Takes named arguments. 
 
-Mandatory paramater:
+Mandatory parameter:
 
 I<uri> specifies the URI of the repository to use. Initially, http and
 file URIs will be supported, so you can access a repository locally
 using C<file:///path/to/repository> or just with C</path/to/repository>.
 HTTP accessible repositories can be specified as C<http://foo> and
 C<https://foo>.
+
+Optional parameters:
+
+  auto_install
+  auto_upgrade
+  static_dependencies
+  cache_dir
+  private_cache_dir
+  architecture
+  perl_version
+  installation_targets
+  http_timeout
 
 If the optional I<auto_install> parameter is set to a true value
 (default: false), any F<.par> file that is about to be loaded is
@@ -161,6 +174,13 @@ If you set C<cache_dir> to something other than the default, the downloaded
 files should be automatically cached when the HTTP transport layer is
 used as C<LWP::mirror()> only checks for updates.
 
+By default, each repository client uses its own private cache directory.
+If you specify C<private_cache_dir =E<gt> 0>, caching will be mostly
+disabled. While a C<private_cache_dir> and caching are the default,
+if you explicitly set a different cache directory with C<cach_dir>,
+you also have to explicitly flag it as a repository-private cache directory
+(aka re-enable caching) with C<private_cache_dir =E<gt> 1>.
+
 =cut
 
 sub new {
@@ -179,6 +199,11 @@ sub new {
   my $obj_class = 'Local';
   if ($uri =~ /^https?:\/\//) {
     $obj_class = 'HTTP';
+  }
+
+  # make sure there is a protocol
+  if ($uri !~ /^\w+:\/\//) {
+    $uri = "file://$uri";
   }
 
   if ($args{auto_install} and $args{auto_upgrade}) {
@@ -216,15 +241,34 @@ sub new {
     architecture          => (defined($args{architecture}) ? $args{architecture} : $Config::Config{archname}),
     cache_dir             => $args{cache_dir},
   } => "PAR::Repository::Client::$obj_class";
-  
-  if (not defined $self->{cache_dir}) {
+
+  # set up the cache dir
+  if (
+    not defined $self->{cache_dir}
+    and (not exists $args{private_cache_dir} or $args{private_cache_dir}) # either default or forced
+  ) {
+    $self->{cache_dir} = $self->generate_private_cache_dir();
+    $self->{private_cache_dir} = 1;
+  }
+  elsif (not defined $self->{cache_dir}) {
     $self->{cache_dir} = defined($ENV{PAR_TEMP})
                          ? $ENV{PAR_TEMP}
-                         : File::Spec->catdir(File::Spec->tmpdir, 'par');
+                         : $self->generate_private_cache_dir(); # if there is no PAR_TEMP, use a private cache
+    $self->{private_cache_dir} = defined($ENV{PAR_TEMP});
+  }
+  else {
+    # explicit cache dir
+    $self->{private_cache_dir} = 0;
   }
   
-  File::Path::mkpath($self->{cache_dir});
-  
+  if (!-d $self->{cache_dir}) {
+    $self->{cleanup_cache_dir} = 1;
+    File::Path::mkpath($self->{cache_dir});
+  }
+
+  # for inter-run caching, calculate the checksums of the local files
+  $self->{checksums} = $self->_calculate_cache_local_checksums();
+
   $self->_init(\%args);
 
   $self->validate_repository()
@@ -356,7 +400,6 @@ sub get_module {
   }
   return() if not @local_par_files;
 
-  require PAR;
   foreach my $local_par_file ($fallback ? @local_par_files : reverse(@local_par_files)) {
     PAR->import( { file => $local_par_file, fallback => ($fallback?1:0) } );
   }
@@ -556,7 +599,6 @@ sub run_script {
     }
   }
 
-  require PAR;
   my $script_par = shift @local_par_files;
   foreach my $local_par_file (@local_par_files) {
     PAR->import( { file => $local_par_file } );
@@ -930,6 +972,13 @@ sub DESTROY {
   $self->close_modules_dbm;
   $self->close_scripts_dbm;
   $self->close_dependencies_dbm;
+
+  # attempt to clean up empty cache directories
+  rmdir($self->{cache_dir})
+    if $self->{cleanup_cache_dir}
+    and $self->{private_cache_dir}
+    and defined($self->{cache_dir})
+    and -d $self->{cache_dir};
 }
 
 1;

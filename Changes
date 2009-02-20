@@ -1,5 +1,17 @@
 Revision history for Perl extension PAR::Repository::Client.
 
+0.24_01  Fri Feb 20 15:21 2009
+    - Many, many, many improvements to the caching algorithms.
+      In fact, I'd go as far as saying that this will be the first
+      release where the caching works well.
+    - Inter-run caching of the DBMs with local checksum
+      re-calculation.
+    - Introduce the private-cache-dir setting for controlling the
+      caching behaviour.
+    - Caching improves run-time of simple test by factor of three.
+    - Enforce the use of a temporary directory as a cache dir
+      in the tests much more so we are good CPAN testers citizens.
+
 0.24  Thu Feb 19 17:16 2009
     - Promote to stable release
 

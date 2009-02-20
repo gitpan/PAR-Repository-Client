@@ -90,6 +90,18 @@ sub _resolve_static_dependencies {
   return \@dep_dists;
 }
 
+sub generate_private_cache_dir {
+  my $self = shift;
+  my $uri = $self->{uri};
+  my $digester = PAR::SetupTemp::_get_digester(); # requires PAR 0.987!
+  $digester->add($uri);
+  my $digest = $digester->b64digest();
+  $digest =~ s/\W/_/g;
+  my $user_temp_dir = PAR::SetupTemp::_get_par_user_tempdir();
+  my $priv_cache_dir = File::Spec->catdir($user_temp_dir, "par-repo-$digest");
+  return $priv_cache_dir;
+}
+
 1;
 __END__
 

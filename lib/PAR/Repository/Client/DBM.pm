@@ -192,7 +192,7 @@ sub close_modules_dbm {
   undef $hash;
   undef $obj;
 
-  unlink $self->{modules_dbm_temp_file};
+  unlink $self->{modules_dbm_temp_file} if not $self->{private_cache_dir};
   $self->{modules_dbm_temp_file} = undef;
   if ($self->{checksums}) {
     delete $self->{checksums}{PAR::Repository::Client::MODULES_DBM_FILE().".zip"};
@@ -221,7 +221,7 @@ sub close_scripts_dbm {
   undef $hash;
   undef $obj;
 
-  unlink $self->{scripts_dbm_temp_file};
+  unlink $self->{scripts_dbm_temp_file} if !$self->{private_cache_dir};
   $self->{scripts_dbm_temp_file} = undef;
   if ($self->{checksums}) {
     delete $self->{checksums}{PAR::Repository::Client::SCRIPTS_DBM_FILE().".zip"};
@@ -250,7 +250,7 @@ sub close_dependencies_dbm {
   undef $hash;
   undef $obj;
 
-  unlink $self->{dependencies_dbm_temp_file};
+  unlink $self->{dependencies_dbm_temp_file} if !$self->{private_cache_dir};
   $self->{dependencies_dbm_temp_file} = undef;
   if ($self->{checksums}) {
     delete $self->{checksums}{PAR::Repository::Client::DEPENDENCIES_DBM_FILE().".zip"};
@@ -288,7 +288,8 @@ sub _get_a_dbm {
   my $tempfile_hashkey   = $dbm_type . "_dbm_temp_file";
   my $dbm_remotefile_zip = $dbm_remotefile . ".zip";
 
-  my $checksums = $self->need_dbm_update();
+  my $checksums = $self->need_dbm_update($dbm_remotefile);
+
   if ($self->{$dbm_hashkey}) {
     # need new dbm file?
     return($self->{$dbm_hashkey}, $self->{$tempfile_hashkey})
@@ -308,9 +309,17 @@ sub _get_a_dbm {
     $self->$method;
   }
 
-  my $file = $self->_fetch_dbm_file($dbm_remotefile_zip);
-  # (error set by _fetch_dbm_file)
-  return() if not defined $file; # or not -f $file; # <--- _fetch_dbm_file should do the stat!
+  my $file;
+  if ($checksums) {
+    $file = $self->_fetch_dbm_file($dbm_remotefile_zip);
+    # (error set by _fetch_dbm_file)
+    return() if not defined $file; # or not -f $file; # <--- _fetch_dbm_file should do the stat!
+  }
+  else {
+    # cached!
+    $file = File::Spec->catfile($self->{cache_dir}, $dbm_remotefile_zip);
+    $self->{error} = "Cache miss error: Expected $file to exist, but it doesn't" if not -f $file;
+  }
 
   my ($tempfh, $tempfile) = File::Temp::tempfile(
     'temporary_dbm_XXXXX',
@@ -323,8 +332,6 @@ sub _get_a_dbm {
     $self->{error} = "Could not unzip dbm file '$file' to '$tempfile'";
     return();
   }
-
-  unlink $file;
 
   $self->{$tempfile_hashkey} = $tempfile;
 
@@ -401,6 +408,61 @@ sub _parse_dbm_checksums {
   return $hashes;
 }
 
+
+=head2 _calculate_cache_local_checksums
+
+This is a private method.
+
+Calculates the checksums of the DBMs in the local cache directory.
+If the repository client isn't using a private cache directory, this
+B<short circuits> and does not actually try to calculate
+any checksums of potentially modified files.
+
+Returns the checksums hash just like the checksum fetching
+routine.
+
+Maintainer note: Essentially the same code lives in
+PAR::Repository's DBM code for calculating the repository checksums
+in the first place.
+
+=cut
+
+sub _calculate_cache_local_checksums {
+  my $self = shift;
+
+  # only support inter-run cache summing if we're in a private cache dir!
+  if (!$self->{private_cache_dir}) {
+    return();
+  }
+
+  # find a working base64 MD5 implementation
+  my $md5_function;
+  eval { require Digest::MD5; $md5_function = \&Digest::MD5::md5_base64; };
+  eval { require Digest::Perl::MD5;  $md5_function = \&Digest::Perl::MD5::md5_base64; } if $@;
+  if ($@) {
+    return();
+  }
+  
+  my $hashes = {};
+  # calculate local hashes
+  foreach my $dbmfile (
+      PAR::Repository::Client::MODULES_DBM_FILE(),
+      PAR::Repository::Client::SCRIPTS_DBM_FILE(),
+      PAR::Repository::Client::SYMLINKS_DBM_FILE(),
+      PAR::Repository::Client::DEPENDENCIES_DBM_FILE(),
+    ) {
+    my $filepath = File::Spec->catfile($self->{cache_dir}, $dbmfile.'.zip');
+    next unless -f $filepath;
+    open my $fh, '<', $filepath
+      or die "Could not open DBM file '$filepath' for reading: $!";
+    local $/ = undef;
+    my $hash = $md5_function->(<$fh>);
+    close $fh;
+    $hashes->{$dbmfile.'.zip'} = $hash;
+  } # end foreach dbm files
+
+  return $hashes; 
+}
 
 1;
 
