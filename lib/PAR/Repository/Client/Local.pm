@@ -9,7 +9,7 @@ use base 'PAR::Repository::Client';
 use Carp qw/croak/;
 require File::Copy;
 
-our $VERSION = '0.21';
+our $VERSION = '0.24';
 
 =head1 NAME
 
@@ -97,6 +97,7 @@ sub validate_repository {
   $self->{error} = undef;
 
   my $mod_db = $self->modules_dbm;
+
   return() unless defined $mod_db;
 
   return() unless $self->validate_repository_version;
@@ -213,6 +214,15 @@ sub _dbm_checksums {
   my $path = $self->{uri};
   $path =~ s/(?:\/|\\)$//;
   $path =~ s!^file://!!i;
+
+  # if we're running on a "trust-the-checksums-for-this-long" basis...
+  # ... return if the timeout hasn't elapsed
+  if ($self->{checksums} and $self->{checksums_timeout}) {
+    my $time = time();
+    if ($time - $self->{last_checksums_refresh} < $self->{checksums_timeout}) {
+      return($self->{checksums});
+    }
+  }
 
   my $file = File::Spec->catfile($path, PAR::Repository::Client::DBM_CHECKSUMS_FILE());
 

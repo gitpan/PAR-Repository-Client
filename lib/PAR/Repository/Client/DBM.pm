@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.21';
+our $VERSION = '0.24';
 
 use Carp qw/croak/;
 
@@ -75,6 +75,7 @@ sub need_dbm_update {
   }
 
   my $checksums = $self->_dbm_checksums();
+  $self->{last_checksums_refresh} = time() if $self->{checksums_timeout};
 
   if (not defined $checksums) {
     $self->{supports_checksums} = 0;
@@ -192,7 +193,7 @@ sub close_modules_dbm {
   undef $hash;
   undef $obj;
 
-  unlink $self->{modules_dbm_temp_file} if not $self->{private_cache_dir};
+  unlink $self->{modules_dbm_temp_file};
   $self->{modules_dbm_temp_file} = undef;
   if ($self->{checksums}) {
     delete $self->{checksums}{PAR::Repository::Client::MODULES_DBM_FILE().".zip"};
@@ -221,7 +222,7 @@ sub close_scripts_dbm {
   undef $hash;
   undef $obj;
 
-  unlink $self->{scripts_dbm_temp_file} if !$self->{private_cache_dir};
+  unlink $self->{scripts_dbm_temp_file};
   $self->{scripts_dbm_temp_file} = undef;
   if ($self->{checksums}) {
     delete $self->{checksums}{PAR::Repository::Client::SCRIPTS_DBM_FILE().".zip"};
@@ -250,7 +251,7 @@ sub close_dependencies_dbm {
   undef $hash;
   undef $obj;
 
-  unlink $self->{dependencies_dbm_temp_file} if !$self->{private_cache_dir};
+  unlink $self->{dependencies_dbm_temp_file};
   $self->{dependencies_dbm_temp_file} = undef;
   if ($self->{checksums}) {
     delete $self->{checksums}{PAR::Repository::Client::DEPENDENCIES_DBM_FILE().".zip"};
@@ -330,6 +331,7 @@ sub _get_a_dbm {
 
   if (not $self->_unzip_file($file, $tempfile, $dbm_remotefile)) {
     $self->{error} = "Could not unzip dbm file '$file' to '$tempfile'";
+    unlink($tempfile);
     return();
   }
 

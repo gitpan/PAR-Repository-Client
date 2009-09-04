@@ -12,7 +12,7 @@ use base 'PAR::Repository::Client';
 
 use Carp qw/croak/;
 
-our $VERSION = '0.21';
+our $VERSION = '0.24';
 
 =head1 NAME
 
@@ -89,6 +89,7 @@ sub fetch_par {
     my $self = shift;
     $self->{error} = undef;
     my $file = shift;
+    #warn "FETCHING FILE: $file";
 
     my $cache_dir = $self->{cache_dir}; # used to be PAR_TEMP, but now configurable
     %escapes = map { chr($_) => sprintf("%%%02X", $_) } 0..255 unless %escapes;
@@ -118,6 +119,7 @@ sub _fetch_as_data {
   my $self = shift;
   $self->{error} = undef;
   my $file = shift;
+  #warn "FETCHING DATA: $file";
 
   my $timeout = $self->{http_timeout};
   my $old_timeout = $ua->timeout();
@@ -250,6 +252,15 @@ sub _dbm_checksums {
 
   my $url = $self->{uri};
   $url =~ s/\/$//;
+
+  # if we're running on a "trust-the-checksums-for-this-long" basis...
+  # ... return if the timeout hasn't elapsed
+  if ($self->{checksums} and $self->{checksums_timeout}) {
+    my $time = time();
+    if ($time - $self->{last_checksums_refresh} < $self->{checksums_timeout}) {
+      return($self->{checksums});
+    }
+  }
 
   my $data = $self->_fetch_as_data(
     $url.'/'.PAR::Repository::Client::DBM_CHECKSUMS_FILE()

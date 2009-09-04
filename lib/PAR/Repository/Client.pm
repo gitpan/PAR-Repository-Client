@@ -4,7 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
-our $VERSION = '0.24_01';
+our $VERSION = '0.25';
 
 # list compatible repository versions
 # This is a list of numbers of the form "\d+.\d".
@@ -130,6 +130,7 @@ Optional parameters:
   perl_version
   installation_targets
   http_timeout
+  checksums_timeout
 
 If the optional I<auto_install> parameter is set to a true value
 (default: false), any F<.par> file that is about to be loaded is
@@ -181,6 +182,12 @@ if you explicitly set a different cache directory with C<cach_dir>,
 you also have to explicitly flag it as a repository-private cache directory
 (aka re-enable caching) with C<private_cache_dir =E<gt> 1>.
 
+By default, it is assumed that the package indices do not change all that
+often. Therefore, there is a default delay of 30 seconds before their
+checksums are re-checked as this may require a network request. You can
+specify in seconds or disable the delay using the C<checksums_timeout =E<gt> XX>
+option.
+
 =cut
 
 sub new {
@@ -212,15 +219,17 @@ sub new {
 
   my $self = bless {
     # the repository uri
-    uri                   => $uri,
+    uri                    => $uri,
 
     # The last error message
-    error                 => '',
+    error                  => '',
 
     # The hash ref of checksums for checking whether we
     # need to update the dbms
-    checksums             => undef,
-    supports_checksums    => undef,
+    checksums              => undef,
+    supports_checksums     => undef,
+    checksums_timeout      => (defined($args{checksums_timeout}) ? $args{checksums_timeout} : 30),
+    last_checksums_refresh => 0,
 
     # the modules- and scripts dbm storage
     # both the local temp file for cleanup
@@ -499,6 +508,7 @@ sub upgrade_module {
 
   # get local version
   my $local_version;
+  local @PAR::PriorityRepositoryObjects = (); # do not load from remote!
   local @PAR::RepositoryObjects = (); # do not load from remote!
   local @PAR::UpgradeRepositoryObjects = ();
   eval "require ${namespace}; \$local_version = ${namespace}->VERSION;";

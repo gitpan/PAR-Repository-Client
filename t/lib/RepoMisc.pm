@@ -14,6 +14,7 @@ sub client_ok {
     uri => $path,
     verbosity => 3,
     cache_dir => $ENV{PAR_TEMP},
+    checksums_timeout => 0,
   );
 
   Test::More::isa_ok($client, 'PAR::Repository::Client');

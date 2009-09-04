@@ -1,5 +1,10 @@
 Revision history for Perl extension PAR::Repository::Client.
 
+0.25  Fri Sep  4 21:29 2009
+    - Fix bug with respect to upgrading and priority (fallback=>0)
+      repositories.
+    - More caching: Add a timeout before fetching checksums again.
+
 0.24_01  Fri Feb 20 15:21 2009
     - Many, many, many improvements to the caching algorithms.
       In fact, I'd go as far as saying that this will be the first
